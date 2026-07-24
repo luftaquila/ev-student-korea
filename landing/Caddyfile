@@ -1,0 +1,73 @@
+{
+	# 프로덕션에서는 traefik이 TLS를 종료하고 실제 클라이언트 IP를 X-Forwarded-For로 넘긴다.
+	# 그 홉을 신뢰해야 per-IP rate limit(로그인)과 감사 로그가 traefik 컨테이너 IP 대신 실제
+	# 클라이언트를 보게 된다 — 신뢰하지 않으면 모든 외부 사용자가 rate-limit 버킷 하나를
+	# 공유해 인증 없이 로그인 잠금 DoS가 가능하다. 프로덕션에서 caddy는 traefik으로만
+	# 접근되므로(호스트 포트 미노출) 사설 대역 신뢰 = traefik 신뢰다.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:9000 {
+	encode zstd gzip {
+		match {
+			header Content-Type text/html*
+			header Content-Type text/plain*
+			header Content-Type text/css*
+			header Content-Type text/javascript*
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; object-src 'none'; frame-ancestors 'self'"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+	}
+
+	# 심층방어: trusted_proxies로 해석한 실제 클라이언트 IP를 X-Real-IP로 세팅하고 인바운드
+	# 값을 덮어쓴다(클라이언트가 직접 보낸 X-Real-IP는 무시). 백엔드는 이 단일 헤더를
+	# rate-limit·감사로그의 client IP로 읽어, 위조하기 쉬운 X-Forwarded-For 최좌측 대신
+	# 신뢰 IP를 쓴다.
+	request_header X-Real-IP {client_ip}
+
+	# Auth service (로그인 · 계정 관리 · 시스템 로그)
+	redir /auth /auth/
+	handle_path /auth/* {
+		# 외부에서 들어온 내부 인증 헤더는 반드시 제거한다 — 그러지 않으면 클라이언트가
+		# X-Internal-Service를 위조해 admin으로 승격할 수 있다.
+		request_header -X-Internal-Service
+		request_header -Authuser
+		# 인바운드 X-Forwarded-Host도 제거한다 — PUBLIC_URL이 비었을 때 auth가 이 헤더로
+		# OAuth 리디렉션 URI를 만들기 때문에 위조되면 콜백이 엉뚱한 호스트로 향한다.
+		# 제거 후 reverse_proxy가 실제 Host 값으로 다시 세팅한다(기본 동작).
+		request_header -X-Forwarded-Host
+		reverse_proxy auth:9100
+	}
+
+	# 등록 대기열 — queue 서비스를 추가하면 아래 블록의 주석을 해제한다.
+	# compose.yml의 queue 서비스 블록 / caddy depends_on / auth LOG_SERVICES도 함께 켜야 한다.
+	# redir /queue /queue/
+	# handle_path /queue/* {
+	# 	request_header -X-Internal-Service
+	# 	request_header -Authuser
+	# 	reverse_proxy queue:9300
+	# }
+
+	# Landing page (static files)
+	handle {
+		root * /srv/landing
+		@hashed path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@html path /index.html
+		header @html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

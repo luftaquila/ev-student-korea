@@ -1,0 +1,12 @@
+.env
+data/
+node_modules/
+*/web/dist/
+landing/dist/
+test-results/
+backups/
+.gstack/
+.omc/
+.codex/
+.claude/
+*.log

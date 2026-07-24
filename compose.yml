@@ -1,0 +1,146 @@
+x-common-env: &common-env
+  JWT_SECRET: ${JWT_SECRET}
+  INTERNAL_SECRET: ${INTERNAL_SECRET}
+  TEST_SERVER: ${TEST_SERVER:-}
+
+x-common-healthcheck: &common-healthcheck
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 5s
+
+services:
+  auth:
+    image: ghcr.io/luftaquila/ev-student-korea/auth:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: auth
+        PORT: 9100
+    container_name: ev-auth
+    security_opt:
+      - label:disable
+    environment:
+      <<: *common-env
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL}
+      # 시스템 로그 뷰어가 집계할 다른 서비스 목록 ("name:url,name:url").
+      # queue를 추가하면: LOG_SERVICES: "queue:http://queue:9300"
+      LOG_SERVICES: ""
+    volumes:
+      - ./auth/data:/home/node/ev-auth/data
+    restart: unless-stopped
+    healthcheck:
+      <<: *common-healthcheck
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9100/api/health"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - ev-network
+
+  # 등록 대기열 — 구현 후 아래 블록의 주석을 해제한다.
+  # landing/Caddyfile의 /queue 라우트, caddy depends_on, auth의 LOG_SERVICES도 함께 켠다.
+  # queue:
+  #   image: ghcr.io/luftaquila/ev-student-korea/queue:latest
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.service
+  #     args:
+  #       SERVICE: queue
+  #       PORT: 9300
+  #   container_name: ev-queue
+  #   security_opt:
+  #     - label:disable
+  #   environment:
+  #     <<: *common-env
+  #     AUTH_SERVER: http://auth:9100
+  #   volumes:
+  #     - ./queue/data:/home/node/ev-queue/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     <<: *common-healthcheck
+  #     test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9300/api/health"]
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #   networks:
+  #     - ev-network
+
+  # Production - traefik이 TLS를 종료하고 Host 라우팅으로 이 컨테이너에 넘긴다
+  caddy:
+    image: &caddy-image ghcr.io/luftaquila/ev-student-korea/caddy:latest
+    build: &caddy-build
+      context: .
+      dockerfile: landing/Dockerfile
+    container_name: ev-caddy
+    security_opt:
+      - label:disable
+    profiles:
+      - production
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ev.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.ev.entrypoints=websecure"
+      - "traefik.http.routers.ev.tls=true"
+      - "traefik.http.routers.ev.tls.certresolver=le"
+      - "traefik.http.services.ev.loadbalancer.server.port=9000"
+    depends_on: &caddy-depends
+      # 모든 서비스가 auth로 사용자 검증을 하므로 auth만 service_healthy로 기다린다.
+      # 서비스가 늘어나면 나머지는 service_started로 추가한다 — 단일 백엔드의 헬스
+      # 크래시루프가 caddy 재생성을 무한 대기시켜 전면 outage로 번지는 것을 막는다.
+      auth: { condition: service_healthy }
+      # queue: { condition: service_started }
+    restart: unless-stopped
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME}
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
+      - TEST_SERVER=${TEST_SERVER:-}
+    healthcheck:
+      # caddy:alpine의 BusyBox wget으로 랜딩(:9000/)을 확인해 프록시 자체가 살아있는지 검증
+      <<: *common-healthcheck
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9000/"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - ev-network
+      - traefik
+
+  # Local development - 포트 9000을 그대로 노출 (TLS·traefik 없음)
+  caddy-local:
+    image: *caddy-image
+    build: *caddy-build
+    container_name: ev-caddy-local
+    security_opt:
+      - label:disable
+    profiles:
+      - local
+    environment:
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
+      - TEST_SERVER=${TEST_SERVER:-}
+    ports:
+      - "0.0.0.0:9000:9000"
+    depends_on: *caddy-depends
+    restart: unless-stopped
+    healthcheck:
+      <<: *common-healthcheck
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9000/"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - ev-network
+
+networks:
+  ev-network:
+    driver: bridge
+  traefik:
+    external: true

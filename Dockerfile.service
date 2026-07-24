@@ -1,0 +1,36 @@
+# Build stage - install all deps and build frontend
+FROM node:22-alpine AS builder
+ARG SERVICE
+WORKDIR /build
+COPY ${SERVICE}/package*.json ./
+COPY ${SERVICE}/web/package*.json web/
+RUN npm ci
+RUN npm --prefix web ci --ignore-scripts
+RUN node web/node_modules/esbuild/install.js
+COPY ${SERVICE}/index.mjs ./
+COPY ${SERVICE}/web/ web/
+COPY ${SERVICE}/lib ./lib
+# 백엔드는 ../shared/*.mjs로, 프론트는 @shared alias로 참조한다. WORKDIR 한 단계 위에
+# 두는 이 배치가 로컬 개발(<service>/ → ../shared)과 정확히 같은 상대경로다.
+COPY shared ../shared
+RUN ln -s /build/web/node_modules /node_modules
+RUN npm --prefix web run build
+
+# Runtime stage - only production artifacts
+FROM node:22-alpine
+ARG SERVICE
+ARG PORT
+RUN apk add --no-cache su-exec
+WORKDIR /home/node/ev-${SERVICE}
+COPY --from=builder /build/node_modules node_modules/
+COPY --from=builder /build/package.json ./
+COPY --from=builder /build/index.mjs ./
+COPY --from=builder /build/lib ./lib
+COPY --from=builder /build/web/dist web/dist/
+COPY shared ../shared
+COPY entrypoint.sh /usr/local/bin/
+ENV NODE_ENV=production
+RUN mkdir -p data && chown -R node:node .
+EXPOSE ${PORT}
+ENTRYPOINT ["entrypoint.sh"]
+CMD [ "node", "index.mjs" ]

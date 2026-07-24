@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-force-exit tests/**/*.test.mjs",
+    "test:auth": "node --test --test-force-exit tests/auth/*.test.mjs"
+  }
+}
