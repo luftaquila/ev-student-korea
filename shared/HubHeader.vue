@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import AppIcon from "./AppIcon.vue";
 import ThemeToggle from "./ThemeToggle.vue";
 import { user, roleLabel, refreshUserFromCookie } from "./userStore.js";
@@ -9,11 +9,13 @@ import { user, roleLabel, refreshUserFromCookie } from "./userStore.js";
 const props = defineProps({
   tabs: { type: Array, default: () => [] },
   currentPath: { type: String, default: "" },
-  subtitle: { type: String, default: "SERVICE HUB" },
+  subtitle: { type: String, default: "" },
 });
 
 const menuOpen = ref(false);
 const menuRef = ref(null);
+
+const initial = computed(() => (user.value?.name || "?").trim().charAt(0).toUpperCase());
 
 // 로그인 후 보고 있던 화면으로 돌아온다. Caddy가 /auth 접두사를 떼기 때문에 절대 경로로 호출한다.
 const loginHref = () =>
@@ -54,11 +56,12 @@ onUnmounted(() => {
     <div class="header-inner">
       <a class="brand" href="/">
         <span class="brand-mark"><AppIcon name="energy" /></span>
-        <span class="brand-text">
-          <span class="brand-name">EV Student Korea</span>
-          <span class="brand-sub">{{ subtitle }}</span>
-        </span>
+        <span class="brand-name">EV Student Korea</span>
       </a>
+      <template v-if="subtitle">
+        <span class="brand-divider"></span>
+        <span class="brand-sub">{{ subtitle }}</span>
+      </template>
 
       <nav v-if="tabs.length" class="nav-tabs">
         <a
@@ -67,10 +70,7 @@ onUnmounted(() => {
           :href="tab.href"
           class="nav-tab"
           :class="{ active: tab.href === currentPath }"
-        >
-          <AppIcon :name="tab.icon" />
-          <span>{{ tab.name }}</span>
-        </a>
+        >{{ tab.name }}</a>
       </nav>
 
       <div class="header-actions">
@@ -78,16 +78,15 @@ onUnmounted(() => {
 
         <div v-if="user" ref="menuRef" class="user-menu">
           <button class="user-chip" type="button" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
-            <AppIcon name="user" />
+            <span class="user-avatar">{{ initial }}</span>
             <span class="user-name">{{ user.name }}</span>
-            <span class="badge badge-accent">{{ roleLabel }}</span>
             <AppIcon name="chevron" class="chevron" :class="{ open: menuOpen }" />
           </button>
 
           <div v-if="menuOpen" class="user-popover">
             <div class="popover-head">
               <div class="user-name-full">{{ user.name }}</div>
-              <div class="dim">{{ roleLabel }} 권한</div>
+              <div class="dim">{{ roleLabel }}</div>
             </div>
             <button class="popover-item" type="button" @click="logout">
               <AppIcon name="logout" />
@@ -96,7 +95,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <a v-else class="btn btn-primary btn-sm" :href="loginHref()">
+        <a v-else class="btn login-btn" :href="loginHref()">
           <AppIcon name="google" />
           <span>Google 로그인</span>
         </a>
@@ -113,27 +112,34 @@ onUnmounted(() => {
 .user-chip {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.5rem;
+  gap: 0.45rem;
+  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
   font-family: var(--font-body);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--text-primary);
   background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
+  border: 1px solid transparent;
+  border-radius: 999px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .user-chip:hover {
   background: var(--bg-hover);
-  border-color: var(--border-strong);
 }
 
-.user-chip .icon {
-  width: 15px;
-  height: 15px;
-  color: var(--text-secondary);
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+  flex: none;
 }
 
 .user-name {
@@ -141,9 +147,13 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 }
 
 .chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
   transition: transform 0.15s ease;
 }
 
@@ -153,18 +163,19 @@ onUnmounted(() => {
 
 .user-popover {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   right: 0;
   z-index: 50;
-  min-width: 190px;
+  min-width: 180px;
   background: var(--bg-card);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 
 .popover-head {
-  padding: 0.6rem 0.75rem;
+  padding: 0.65rem 0.85rem;
   border-bottom: 1px solid var(--border-color);
   font-size: 0.8125rem;
 }
@@ -179,7 +190,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.5rem;
   width: 100%;
-  padding: 0.55rem 0.75rem;
+  padding: 0.6rem 0.85rem;
   font-family: var(--font-body);
   font-size: 0.8125rem;
   color: var(--text-primary);
@@ -191,21 +202,25 @@ onUnmounted(() => {
 
 .popover-item:hover {
   background: var(--bg-hover);
-  color: var(--accent-danger);
 }
 
 .popover-item .icon {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-secondary);
+}
+
+.login-btn .icon {
+  width: 15px;
+  height: 15px;
 }
 
 @media (max-width: 768px) {
-  .user-name,
-  .user-chip .badge {
+  .user-name {
     display: none;
   }
 
-  .btn-primary span {
+  .login-btn span {
     display: none;
   }
 }

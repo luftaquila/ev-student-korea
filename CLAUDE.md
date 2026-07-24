@@ -142,16 +142,22 @@ logger.warn(req, action, detail, target, actorOverride)   // level: warn (실패
 6. **detail에는 사람이 이해할 맥락을 누락 없이 담는다.** 실패는 `{ error: "..." }`, 성공은 변경된
    값·대상·조건. ID만 남기고 이름을 빠뜨리지 않는다.
 
-## Design System — "Circuit"
+## Design System
 
 `shared/styles/`가 단일 소스: `tokens.css`(CSS 변수) → `base.css`(리셋·컴포넌트) →
-`layout.css`(헤더·본문 골격). **다크가 기본**(`:root`)이고 `[data-theme="light"]`가 대안이다.
+`layout.css`(헤더·본문·푸터 골격). **라이트가 기본**(`:root`)이고 `[data-theme="dark"]`가 대안이다.
 
-- 액센트는 일렉트릭 라임 `--accent-primary`(다크 `#B4FF39` / 라이트 `#4B8A00` — 흰 배경 대비 확보).
-- **그림자 없음.** 깊이는 1px 보더 + 배경 단계로 표현하고, hover는 `--glow`로 라임 보더를 켠다.
-- 섹션 제목·라벨·수치는 모노스페이스(`--font-display`), 본문은 `--font-body`.
+원칙: 실제 서비스처럼 보이는 절제된 UI. 장식적 요소(네온 액센트, 모노스페이스 대문자 라벨,
+배경 텍스처, 글로우)를 쓰지 않는다.
+
+- 폰트는 Pretendard(`--font-body`, cdn.jsdelivr.net — Caddyfile CSP에 허용됨). 모노스페이스
+  (`--font-mono`)는 이메일·타임스탬프·코드 값에만 쓴다.
+- 액센트는 파랑 `--accent-primary`(라이트 `#2f6fed` / 다크 `#5c8ffa`) 하나. 링크·주 버튼·
+  활성 탭에만 쓰고 그 외에는 무채색을 유지한다.
+- 깊이는 1px 보더 + 은은한 그림자(`--shadow-card`/`--shadow-hover`/`--shadow-modal`).
+- 모서리는 `--radius`(8px, 버튼·입력) / `--radius-lg`(12px, 카드·패널·모달).
+- UI 카피는 자연스러운 한국어로 쓴다. 영문 대문자 디스플레이 타이포를 쓰지 않는다.
 - **이모지 아이콘 금지.** `shared/icons.js`의 stroke SVG를 `<AppIcon name="..." />`로 렌더한다.
-- 모서리 반경은 `--radius`(4px) 하나로 통일.
 
 ## References
 

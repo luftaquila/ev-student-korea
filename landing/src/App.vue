@@ -10,6 +10,8 @@ import { services, externals, adminMenu } from "@shared/nav-config.js";
 
 const { error: notifyError } = useNotification();
 
+const year = new Date().getFullYear();
+
 const LOGIN_ERROR_MESSAGES = {
   unregistered: "등록되지 않은 계정입니다. 관리자에게 문의하세요.",
   deactivated: "비활성화된 계정입니다. 관리자에게 문의하세요.",
@@ -44,69 +46,56 @@ onMounted(() => {
   <div class="app-shell">
     <SonnerToaster />
     <HubHeader />
+    <HeroBanner />
 
     <main class="main">
-      <HeroBanner />
-
       <section class="section">
-        <h2 class="section-label"><span class="section-index">01</span> Services ///</h2>
+        <h2 class="section-title">서비스</h2>
         <div class="card-grid">
-          <HubCard v-for="(item, i) in services" :key="item.href" v-bind="item" :index="i + 1" />
+          <HubCard v-for="item in services" :key="item.href" v-bind="item" />
         </div>
       </section>
 
       <section class="section">
-        <h2 class="section-label"><span class="section-index">02</span> External ///</h2>
+        <h2 class="section-title">외부 서비스</h2>
         <div class="card-grid">
-          <HubCard v-for="(item, i) in externals" :key="item.href" v-bind="item" :index="i + 1" external />
+          <HubCard v-for="item in externals" :key="item.href" v-bind="item" external />
         </div>
       </section>
 
       <section v-if="isAdmin" class="section">
-        <h2 class="section-label"><span class="section-index">03</span> Admin ///</h2>
+        <h2 class="section-title">관리자</h2>
         <div class="card-grid">
-          <HubCard v-for="(item, i) in adminMenu" :key="item.href" v-bind="item" :index="i + 1" />
+          <HubCard v-for="item in adminMenu" :key="item.href" v-bind="item" />
         </div>
       </section>
     </main>
 
-    <footer class="footer">
-      <span class="mono dim">EV STUDENT KOREA · SERVICE HUB</span>
-    </footer>
+    <footer class="app-footer">© {{ year }} EV Student Korea</footer>
   </div>
 </template>
 
 <style scoped>
-.section {
-  margin-bottom: var(--spacing-2xl);
+.section + .section {
+  margin-top: var(--spacing-xl);
 }
 
-.section-label {
-  margin-bottom: var(--spacing-md);
+.section-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.85rem;
 }
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: var(--spacing-md);
-}
-
-.footer {
-  padding: var(--spacing-lg) var(--spacing-xl);
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-  font-size: 0.6875rem;
-  letter-spacing: 0.14em;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
 }
 
 @media (max-width: 640px) {
-  .section {
-    margin-bottom: var(--spacing-xl);
-  }
-
   .card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.6rem;
+    grid-template-columns: 1fr;
   }
 }
 </style>

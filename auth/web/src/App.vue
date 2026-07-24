@@ -29,7 +29,7 @@ watch(
 <template>
   <div class="app-shell">
     <SonnerToaster />
-    <HubHeader :tabs="isAdmin ? tabs : []" :currentPath="currentPath" subtitle="ADMIN" />
+    <HubHeader :tabs="isAdmin ? tabs : []" :currentPath="currentPath" subtitle="관리자" />
 
     <main class="main">
       <router-view v-if="isAdmin" />

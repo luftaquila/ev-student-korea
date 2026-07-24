@@ -7,7 +7,6 @@ const props = defineProps({
   desc: { type: String, default: "" },
   icon: { type: String, default: "queue" },
   href: { type: String, required: true },
-  index: { type: Number, default: 1 },
   external: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   badge: { type: String, default: "" },
@@ -15,7 +14,6 @@ const props = defineProps({
 
 // 미구현 서비스는 링크가 아니라 정보 카드다 — 앵커로 두면 클릭해서 404를 보게 된다.
 const tag = computed(() => (props.disabled ? "div" : "a"));
-const label = computed(() => String(props.index).padStart(2, "0"));
 </script>
 
 <template>
@@ -27,80 +25,45 @@ const label = computed(() => String(props.index).padStart(2, "0"));
     :target="external ? '_blank' : undefined"
     :rel="external ? 'noopener noreferrer' : undefined"
   >
-    <div class="card-top">
-      <span class="card-index mono">{{ label }}</span>
-      <AppIcon v-if="external" name="external" class="card-out" />
-      <AppIcon v-else-if="disabled" name="clock" class="card-out" />
-    </div>
-
     <span class="card-icon"><AppIcon :name="icon" /></span>
 
-    <div class="card-text">
-      <h3 class="card-name">
+    <span class="card-body">
+      <span class="card-title">
         {{ name }}
         <span v-if="badge" class="badge badge-muted">{{ badge }}</span>
-      </h3>
-      <p v-if="desc" class="card-desc">{{ desc }}</p>
-    </div>
+      </span>
+      <span v-if="desc" class="card-desc">{{ desc }}</span>
+    </span>
+
+    <AppIcon v-if="external" name="external" class="card-arrow" />
+    <AppIcon v-else-if="!disabled" name="chevron" class="card-arrow card-arrow-right" />
   </component>
 </template>
 
 <style scoped>
 .hub-card {
-  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  padding: var(--spacing-md);
-  min-height: 11rem;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
   color: var(--text-primary);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   text-decoration: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.hub-card:not(.disabled):hover {
+a.hub-card:hover {
   text-decoration: none;
-  background: var(--bg-hover);
-  box-shadow: var(--glow);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-hover);
 }
 
-.hub-card:not(.disabled):hover .card-index,
-.hub-card:not(.disabled):hover .card-icon {
-  color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-.hub-card.disabled {
-  cursor: default;
-  background: transparent;
-  border-style: dashed;
-}
-
-.hub-card.disabled .card-name,
+.hub-card.disabled .card-title,
+.hub-card.disabled .card-desc,
 .hub-card.disabled .card-icon {
-  color: var(--text-tertiary);
-}
-
-.card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.card-index {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  color: var(--text-tertiary);
-  transition: color 0.18s ease;
-}
-
-.card-out {
-  width: 15px;
-  height: 15px;
   color: var(--text-tertiary);
 }
 
@@ -108,55 +71,51 @@ const label = computed(() => String(props.index).padStart(2, "0"));
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  transition: color 0.18s ease, border-color 0.18s ease;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  flex: none;
 }
 
 .card-icon .icon {
-  width: 21px;
-  height: 21px;
+  width: 20px;
+  height: 20px;
 }
 
-.card-text {
-  margin-top: auto;
+.card-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.card-name {
+.card-title {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  flex-wrap: wrap;
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   word-break: keep-all;
 }
 
 .card-desc {
-  margin-top: 0.2rem;
+  margin-top: 0.1rem;
   font-size: 0.8125rem;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--text-secondary);
   word-break: keep-all;
 }
 
-@media (max-width: 640px) {
-  .hub-card {
-    min-height: 0;
-    gap: 0.6rem;
-    padding: 0.85rem;
-  }
+.card-arrow {
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  flex: none;
+}
 
-  .card-icon {
-    width: 32px;
-    height: 32px;
-  }
-
-  .card-desc {
-    display: none;
-  }
+.card-arrow-right {
+  transform: rotate(-90deg);
 }
 </style>

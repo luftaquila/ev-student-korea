@@ -1,46 +1,51 @@
 /* ============================================================
-   Circuit — EV Student Korea 디자인 토큰
-   다크가 기본(:root)이고 [data-theme="light"]가 대안이다. theme-init.js가
-   documentElement에 data-theme을 항상 명시적으로 세팅하므로 두 값 모두 결정적이다.
+   EV Student Korea 디자인 토큰
+   라이트가 기본(:root)이고 [data-theme="dark"]가 대안이다. theme-init.js가
+   documentElement에 data-theme을 항상 명시적으로 세팅한다.
    ============================================================ */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap");
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --bg-primary: #0b0f14;
-  --bg-secondary: #101720;
-  --bg-card: #141a21;
-  --bg-hover: #1b2430;
-  --bg-input: #0e141b;
-  --bg-overlay: rgba(4, 7, 10, 0.72);
+  --bg-primary: #f6f7f9;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f2f4f7;
+  --bg-subtle: #f8f9fb;
+  --bg-input: #ffffff;
+  --bg-overlay: rgba(23, 25, 29, 0.5);
 
-  --text-primary: #e6edf3;
-  --text-secondary: #8b98a5;
-  --text-tertiary: #5a6672;
-  --text-on-accent: #0b0f14;
+  --text-primary: #191f28;
+  --text-secondary: #66707d;
+  --text-tertiary: #9aa4b2;
+  --text-on-accent: #ffffff;
 
-  --accent-primary: #b4ff39;
-  --accent-primary-soft: rgba(180, 255, 57, 0.12);
-  --accent-secondary: #39e0ff;
-  --accent-success: #4ade80;
-  --accent-success-soft: rgba(74, 222, 128, 0.12);
-  --accent-warning: #fbbf24;
-  --accent-warning-soft: rgba(251, 191, 36, 0.14);
-  --accent-danger: #ff5c5c;
-  --accent-danger-soft: rgba(255, 92, 92, 0.12);
+  --accent-primary: #2f6fed;
+  --accent-primary-hover: #255fd1;
+  --accent-primary-soft: rgba(47, 111, 237, 0.09);
+  --accent-success: #178745;
+  --accent-success-soft: rgba(23, 135, 69, 0.1);
+  --accent-warning: #a16207;
+  --accent-warning-soft: rgba(161, 98, 7, 0.12);
+  --accent-danger: #d6303a;
+  --accent-danger-soft: rgba(214, 48, 58, 0.08);
 
-  --border-color: #223040;
-  --border-strong: #2e4054;
+  --border-color: #e5e8ec;
+  --border-strong: #cfd4db;
   --border-focus: var(--accent-primary);
 
-  /* 그림자 대신 쓰는 강조. hover/focus에서 라임 보더가 켜진다. */
-  --glow: 0 0 0 1px var(--accent-primary), 0 0 20px -6px rgba(180, 255, 57, 0.4);
-  --grid-line: rgba(255, 255, 255, 0.035);
+  --shadow-card: 0 1px 2px rgba(25, 31, 40, 0.04);
+  --shadow-hover: 0 6px 16px rgba(25, 31, 40, 0.08);
+  --shadow-modal: 0 12px 32px rgba(25, 31, 40, 0.16);
 
-  --radius: 4px;
-  --font-display: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-body: "IBM Plex Sans KR", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --font-body: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, Roboto, "Helvetica Neue", "Apple SD Gothic Neo", "Noto Sans KR",
+    "Malgun Gothic", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
@@ -49,40 +54,40 @@
   --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
 
-  --header-height: 60px;
-  --layout-max-width: 1180px;
+  --header-height: 64px;
+  --layout-max-width: 1120px;
 }
 
-[data-theme="light"] {
-  color-scheme: light;
+[data-theme="dark"] {
+  color-scheme: dark;
 
-  --bg-primary: #f3f5f1;
-  --bg-secondary: #ffffff;
-  --bg-card: #ffffff;
-  --bg-hover: #eaeee5;
-  --bg-input: #ffffff;
-  --bg-overlay: rgba(16, 23, 32, 0.45);
+  --bg-primary: #131417;
+  --bg-secondary: #1b1d21;
+  --bg-card: #1b1d21;
+  --bg-hover: #25282e;
+  --bg-subtle: #202329;
+  --bg-input: #17181c;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
 
-  --text-primary: #101720;
-  --text-secondary: #58646f;
-  --text-tertiary: #8a959f;
+  --text-primary: #e9ebee;
+  --text-secondary: #a0a8b3;
+  --text-tertiary: #697180;
   --text-on-accent: #ffffff;
 
-  /* 라임 #b4ff39 는 흰 배경에서 대비가 3:1 미만이라 텍스트·보더로 못 쓴다.
-     같은 색상각의 딥라임으로 치환해 대비를 확보한다. */
-  --accent-primary: #4b8a00;
-  --accent-primary-soft: rgba(75, 138, 0, 0.1);
-  --accent-secondary: #0e7490;
-  --accent-success: #15803d;
-  --accent-success-soft: rgba(21, 128, 61, 0.1);
-  --accent-warning: #a16207;
-  --accent-warning-soft: rgba(161, 98, 7, 0.12);
-  --accent-danger: #c62828;
-  --accent-danger-soft: rgba(198, 40, 40, 0.1);
+  --accent-primary: #5c8ffa;
+  --accent-primary-hover: #6f9cfb;
+  --accent-primary-soft: rgba(92, 143, 250, 0.16);
+  --accent-success: #3fbf72;
+  --accent-success-soft: rgba(63, 191, 114, 0.15);
+  --accent-warning: #d9a53d;
+  --accent-warning-soft: rgba(217, 165, 61, 0.15);
+  --accent-danger: #f26d76;
+  --accent-danger-soft: rgba(242, 109, 118, 0.14);
 
-  --border-color: #d6ddd2;
-  --border-strong: #b8c2b2;
+  --border-color: #2c3037;
+  --border-strong: #3d434c;
 
-  --glow: 0 0 0 1px var(--accent-primary), 0 0 20px -8px rgba(75, 138, 0, 0.35);
-  --grid-line: rgba(16, 23, 32, 0.04);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
