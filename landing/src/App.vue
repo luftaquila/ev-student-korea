@@ -2,7 +2,6 @@
 import { onMounted } from "vue";
 import HubHeader from "@shared/HubHeader.vue";
 import SonnerToaster from "@shared/SonnerToaster.vue";
-import HeroBanner from "./components/HeroBanner.vue";
 import HubCard from "./components/HubCard.vue";
 import { useNotification } from "@shared/useNotification.js";
 import { user, isAdmin } from "@shared/userStore.js";
@@ -46,8 +45,8 @@ onMounted(() => {
   <div class="app-shell">
     <SonnerToaster />
     <HubHeader />
-    <HeroBanner />
 
+    <!-- 마케팅성 히어로 없이 바로 본론 — 운영 포털은 랜딩이 곧 바로가기 목록이다 -->
     <main class="main">
       <section class="section">
         <h2 class="section-title">서비스</h2>

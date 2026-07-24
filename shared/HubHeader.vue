@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import AppIcon from "./AppIcon.vue";
+import GoogleLogo from "./GoogleLogo.vue";
 import ThemeToggle from "./ThemeToggle.vue";
 import { user, roleLabel, refreshUserFromCookie } from "./userStore.js";
 
@@ -96,7 +97,7 @@ onUnmounted(() => {
         </div>
 
         <a v-else class="btn login-btn" :href="loginHref()">
-          <AppIcon name="google" />
+          <GoogleLogo />
           <span>Google 로그인</span>
         </a>
       </div>
@@ -208,11 +209,6 @@ onUnmounted(() => {
   width: 15px;
   height: 15px;
   color: var(--text-secondary);
-}
-
-.login-btn .icon {
-  width: 15px;
-  height: 15px;
 }
 
 @media (max-width: 768px) {
