@@ -40,21 +40,46 @@ Frontend: Vue 3, Vite 7, Vue Router 4, vue-sonner · Backend: Node.js 22, Expres
 
 ```bash
 # 프론트
-cd {service}/web && npm run dev|build     # auth
+cd {service}/web && npm run dev|build     # auth (build는 프로덕션 base /auth/)
+cd auth/web && npm run build:dev          # base 없음 — 백엔드에 직접 붙어 볼 때
 cd landing && npm run dev|build           # landing
 
 # 백엔드 (index.mjs는 create*App(options) 팩토리를 export하고 직접 실행 시에만 listen)
 cd {service} && node index.mjs
 
-# Docker (Makefile은 podman compose를 감싸고 dangling 이미지를 자동 정리)
+# 로컬 compose (Makefile은 podman compose를 감싸고 dangling 이미지를 자동 정리)
 make build                     # 로컬 빌드
-make deploy                    # pull + 재생성 (production)
-make deploy SVC=auth           # 단일 서비스
 make deploy PROFILE=local      # 로컬 (localhost:9000)
 make restart                   # 재시작만
 ```
 
 전제: podman machine, `.env`(최소 `JWT_SECRET`, `INTERNAL_SECRET`).
+
+## Deployment — luftwolke k3s (GitOps)
+
+프로덕션은 compose가 아니라 **luftwolke의 k3s + Flux**다. compose/Makefile은 로컬 확인용.
+
+```
+main push → GitHub Actions(build.yml) → ghcr.io/luftaquila/ev-student-korea/{auth,caddy}:latest
+          → Flux가 luftaquila/k3s pull → ev 네임스페이스 반영 (~1분)
+```
+
+- 매니페스트: `luftaquila/k3s` → `clusters/luftwolke/apps/ev/`
+  (`namespace.yaml` · `configmap.yaml` · `auth.yaml` · `caddy.yaml` · `kustomization.yaml`)
+- 외부 노출은 **caddy 하나뿐**. IngressRoute가 `Host(ev.luftaquila.io)` → `caddy:9000`,
+  caddy가 `/auth/*` → k8s Service `auth:9100`으로 프록시한다(compose와 동일한 Caddyfile).
+- 시크릿은 git에 없다. `ev-secrets`(JWT_SECRET · INTERNAL_SECRET · GOOGLE_CLIENT_SECRET)를
+  `kubectl create secret`으로 주입하고 매니페스트는 `secretRef`만 참조한다. FSK와 같은 값을 쓴다.
+- 비시크릿은 `ev-config` ConfigMap(NODE_ENV · TEST_SERVER · ADMIN_EMAIL · GOOGLE_CLIENT_ID ·
+  PUBLIC_URL · DOMAIN_NAME).
+- 데이터는 `/home/k3s-data/ev/auth` hostPath. 전 앱 `runAsUser:0` + `seLinuxOptions: spc_t` 규칙.
+- 같은 `:latest`로 이미지를 새로 밀었으면 `kubectl -n ev rollout restart deploy/auth`.
+- 상태 확인: `flux get kustomizations` · `kubectl -n ev get pods`.
+
+queue 서비스를 추가하면 `clusters/luftwolke/apps/ev/queue.yaml`(+ kustomization 등록,
+`/home/k3s-data/ev/queue` 생성)과 이 저장소의 Caddyfile·auth `LOG_SERVICES`를 함께 켠다.
+
+클러스터 전체 규칙(Flux·TLS·백업·로컬 빌드 검증 절차)은 luftwolke의 `/srv/k3s/README.md`가 권위.
 
 ## Auth & Inter-service
 

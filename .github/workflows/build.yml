@@ -1,0 +1,129 @@
+name: Build Images
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'Makefile'
+      - 'LICENSE'
+      - '.env.example'
+      - '.gitignore'
+      - 'scripts/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+# 각 서비스는 아키텍처별로 UNTAGGED 다이제스트로 푸시되고, merge 잡이 :latest 매니페스트
+# 리스트를 만든다. 두 실행이 겹치면 한쪽의 방금 푸시한(아직 태그 없는) 다이제스트가
+# 다른 쪽 정리 대상이 될 수 있으므로 워크플로를 직렬화한다(진행 중 발행은 취소하지 않는다).
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 서비스가 2개뿐이라 경로 필터 없이 항상 둘 다 빌드한다(shared/ 변경이 양쪽에 영향).
+          # arm64는 네이티브 러너를 쓴다 — QEMU 에뮬레이션으로 vite 빌드를 돌리면 수 배 느리다.
+          - { service: auth,  port: 9100, arch: amd64, runner: ubuntu-latest,    platform: linux/amd64 }
+          - { service: auth,  port: 9100, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64 }
+          - { service: caddy, arch: amd64, runner: ubuntu-latest,    platform: linux/amd64 }
+          - { service: caddy, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64 }
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+        with:
+          # Docker Hub 베이스 이미지(node:22-alpine, caddy:alpine) pull을 구글
+          # pull-through 미러로 돌린다 — 익명 Docker Hub pull은 레이트 리밋에 걸린다.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Set build config
+        id: config
+        run: |
+          if [ "${{ matrix.service }}" = "caddy" ]; then
+            echo "dockerfile=landing/Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerfile=Dockerfile.service" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ steps.config.outputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            ${{ matrix.port && format('SERVICE={0}', matrix.service) || '' }}
+            ${{ matrix.port && format('PORT={0}', matrix.port) || '' }}
+          provenance: false
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }},mode=min,ignore-error=true
+
+      - name: Export digest
+        run: |
+          digest="${{ steps.build.outputs.digest }}"
+          if [ -z "$digest" ]; then
+            echo "::error::build produced no digest" >&2
+            exit 1
+          fi
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.service }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth, caddy]
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ matrix.service }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Create manifest list
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest \
+            $(printf 'ghcr.io/${{ github.repository }}/${{ matrix.service }}@sha256:%s ' *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest

@@ -51,14 +51,29 @@ node -e 'import("./shared/express-setup.mjs").then(m=>console.log(m.createJWT({e
 
 ## 배포
 
-```bash
-cp .env.example .env    # 시크릿·Google OAuth 키 입력
-make build              # 로컬 이미지 빌드
-make deploy             # 프로덕션 (Traefik 필요)
-make deploy PROFILE=local   # 로컬 http://localhost:9000
+프로덕션은 **luftwolke의 k3s + Flux GitOps**다. compose는 로컬 확인용으로만 쓴다.
+
+```
+코드 push → GitHub Actions가 ghcr.io/luftaquila/ev-student-korea/{auth,caddy}:latest 빌드
+         → Flux가 luftaquila/k3s 를 pull → luftwolke의 ev 네임스페이스에 반영
 ```
 
-`PUBLIC_URL`에 대응하는 리디렉션 URI(`<PUBLIC_URL>/auth/api/callback`)를 Google Cloud Console의
-OAuth 클라이언트에 등록해야 로그인이 동작한다.
+- 매니페스트: `luftaquila/k3s` → `clusters/luftwolke/apps/ev/`
+- 시크릿: git이 아니라 `kubectl`로 주입한 `ev-secrets`(JWT_SECRET · INTERNAL_SECRET ·
+  GOOGLE_CLIENT_SECRET). 비시크릿 설정은 `ev-config` ConfigMap.
+- 데이터: `/home/k3s-data/ev/auth` hostPath (백업은 클러스터의 `stateful-backup` CronJob이 담당)
+- TLS/DNS: Porkbun 와일드카드 인증서 + Traefik `TLSStore default`, `ev.luftaquila.io` CNAME은 이미 등록됨
+
+같은 `:latest` 태그로 이미지를 새로 밀었을 때 반영: `kubectl -n ev rollout restart deploy/auth`
+(또는 `deploy/caddy`). 자세한 규칙은 luftwolke의 `/srv/k3s/README.md`.
+
+```bash
+# 로컬 compose (선택)
+cp .env.example .env    # 시크릿·Google OAuth 키 입력
+make build && make deploy PROFILE=local   # http://localhost:9000
+```
+
+Google OAuth 클라이언트는 FSK와 공유하며, 승인된 리디렉션 URI에
+`https://ev.luftaquila.io/auth/api/callback`이 등록되어 있어야 로그인이 동작한다.
 
 자세한 내용은 `CLAUDE.md` 참고.
