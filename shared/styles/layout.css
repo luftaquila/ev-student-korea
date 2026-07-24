@@ -149,16 +149,6 @@
   color: var(--text-secondary);
 }
 
-/* ── 푸터 ───────────────────────────────────────────────── */
-.app-footer {
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  padding: var(--spacing-lg) var(--spacing-xl);
-  text-align: center;
-  font-size: 0.8125rem;
-  color: var(--text-tertiary);
-}
-
 @media (max-width: 768px) {
   .header-inner {
     padding: 0 var(--spacing-md);

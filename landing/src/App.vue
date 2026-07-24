@@ -9,8 +9,6 @@ import { services, externals, adminMenu } from "@shared/nav-config.js";
 
 const { error: notifyError } = useNotification();
 
-const year = new Date().getFullYear();
-
 const LOGIN_ERROR_MESSAGES = {
   unregistered: "등록되지 않은 계정입니다. 관리자에게 문의하세요.",
   deactivated: "비활성화된 계정입니다. 관리자에게 문의하세요.",
@@ -69,8 +67,6 @@ onMounted(() => {
         </div>
       </section>
     </main>
-
-    <footer class="app-footer">© {{ year }} EV Student Korea</footer>
   </div>
 </template>
 
