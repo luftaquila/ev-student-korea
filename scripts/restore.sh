@@ -43,7 +43,7 @@ read -r answer
 # 서비스 이름 → DB 경로 (backup.sh의 SQLITE_DBS와 동일하게 유지한다)
 declare -A DB_PATHS=(
   [auth]="auth/data/auth.db"
-  # [queue]="queue/data/queue.db"
+  [queue]="queue/data/queue.db"
 )
 
 echo "컨테이너 정지…"

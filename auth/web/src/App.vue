@@ -16,7 +16,8 @@ function toHref(routePath) {
   return (base + routePath.replace(/^\//, "")).replace(/\/$/, "") || "/";
 }
 
-const tabs = computed(() => adminMenu.map((m) => ({ ...m, href: toHref(m.route) })));
+// route가 없는 항목은 다른 서비스의 화면(예: queue의 엔트리 관리)이라 href를 그대로 쓴다.
+const tabs = computed(() => adminMenu.map((m) => ({ ...m, href: m.route ? toHref(m.route) : m.href })));
 const currentPath = computed(() => toHref(route.path));
 
 watch(

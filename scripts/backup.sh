@@ -26,7 +26,7 @@ fi
 # 서비스를 추가하면 여기에 "이름:DB경로" 한 줄만 더한다
 SQLITE_DBS=(
   "auth:auth/data/auth.db"
-  # "queue:queue/data/queue.db"
+  "queue:queue/data/queue.db"
 )
 
 echo "=== EV 백업 시작: $BACKUP_NAME ==="

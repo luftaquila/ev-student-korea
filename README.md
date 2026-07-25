@@ -6,30 +6,38 @@ EV 대회 운영 서비스 허브. https://ev.luftaquila.io
 |---|---|---|
 | `landing/` | 허브 랜딩 페이지 + Caddy 리버스 프록시 게이트웨이 (Vue 3 + Caddy) | 9000 |
 | `auth/` | Google 로그인 · 계정 관리 · 시스템 로그 (Express 5 + Vue 3) | 9100 |
-| `queue/` | 등록 대기열 — **미구현** (랜딩에 `준비 중` 카드만) | 9300 (예약) |
+| `queue/` | 등록 대기열 — 대기 등록 태블릿 · 순서 조회 · SMS 알림 · 엔트리 관리 | 9300 |
 
 외부 서비스는 랜딩에서 링크로만 연결한다: 에너지미터, 공지 알림봇, AI 규정 챗봇, 자작자동차포럼.
 
 ## 구조
 
 ```
-브라우저 → Traefik (TLS, Host 라우팅) → Caddy :9000 ─┬─ /auth/* → auth:9100
-                                                     └─ /*      → 랜딩 정적 파일
+브라우저 → Traefik (TLS, Host 라우팅) → Caddy :9000 ─┬─ /auth/*  → auth:9100
+                                                     ├─ /queue/* → queue:9300
+                                                     └─ /*       → 랜딩 정적 파일
 ```
 
-권한은 `official < admin` 2단계. 등록 대기열에서만 쓰이며 나머지 서비스는 모두 공개 링크다.
-인증은 Google OAuth 2.0 + 자체 HMAC-SHA256 JWT 쿠키(`ev_session`), 역할은 매 요청 auth 서비스에
-재검증한다(fail-close).
+권한은 `official < admin` 2단계. 인증은 Google OAuth 2.0 + 자체 HMAC-SHA256 JWT
+쿠키(`ev_session`), 역할은 매 요청 auth 서비스에 재검증한다(fail-close).
+
+등록 대기열은 학회 등록 줄을 대체한다: 오피셜이 태블릿에 띄운 등록 화면(`/queue/register`)에서
+학생이 엔트리 번호·전화번호로 대기 등록하고, 순서가 다가오면 SMS(Naver Cloud SENS)로 알림을
+받는다. 학생은 공개 조회 페이지(`/queue`)에서 자기 순번과 대기 인원을 확인할 수 있다.
+오피셜은 대기열 관리(`/queue/manage`)에서 호출·완료·취소와 접수 여부·알림 설정을 조작하고,
+관리자는 엔트리 목록(`/queue/entries`)을 관리한다.
 
 ## 개발
 
 ```bash
 # 의존성
 cd auth && npm install && cd web && npm install && cd ../..
+cd queue && npm install && cd web && npm install && cd ../..
 cd landing && npm install && cd ..
 
 # 프론트 개발 서버 (HMR, /api 와 /auth/api 를 백엔드로 프록시)
 cd auth/web && npm run dev      # :5173
+cd queue/web && npm run dev     # :5173
 cd landing && npm run dev       # :9000
 
 # 백엔드 (프론트를 먼저 빌드해야 정적 파일이 서빙된다)
@@ -54,18 +62,18 @@ node -e 'import("./shared/express-setup.mjs").then(m=>console.log(m.createJWT({e
 프로덕션은 **luftwolke의 k3s + Flux GitOps**다. compose는 로컬 확인용으로만 쓴다.
 
 ```
-코드 push → GitHub Actions가 ghcr.io/luftaquila/ev-student-korea/{auth,caddy}:latest 빌드
+코드 push → GitHub Actions가 ghcr.io/luftaquila/ev-student-korea/{auth,queue,caddy}:latest 빌드
          → Flux가 luftaquila/k3s 를 pull → luftwolke의 ev 네임스페이스에 반영
 ```
 
 - 매니페스트: `luftaquila/k3s` → `clusters/luftwolke/apps/ev/`
 - 시크릿: git이 아니라 `kubectl`로 주입한 `ev-secrets`(JWT_SECRET · INTERNAL_SECRET ·
-  GOOGLE_CLIENT_SECRET). 비시크릿 설정은 `ev-config` ConfigMap.
-- 데이터: `/home/k3s-data/ev/auth` hostPath (백업은 클러스터의 `stateful-backup` CronJob이 담당)
+  GOOGLE_CLIENT_SECRET · Naver Cloud SENS 4종). 비시크릿 설정은 `ev-config` ConfigMap.
+- 데이터: `/home/k3s-data/ev/{auth,queue}` hostPath (백업은 클러스터의 `stateful-backup` CronJob이 담당)
 - TLS/DNS: Porkbun 와일드카드 인증서 + Traefik `TLSStore default`, `ev.luftaquila.io` CNAME은 이미 등록됨
 
 같은 `:latest` 태그로 이미지를 새로 밀었을 때 반영: `kubectl -n ev rollout restart deploy/auth`
-(또는 `deploy/caddy`). 자세한 규칙은 luftwolke의 `/srv/k3s/README.md`.
+(또는 `deploy/queue`, `deploy/caddy`). 자세한 규칙은 luftwolke의 `/srv/k3s/README.md`.
 
 ```bash
 # 로컬 compose (선택)

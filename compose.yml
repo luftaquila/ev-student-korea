@@ -28,8 +28,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       PUBLIC_URL: ${PUBLIC_URL}
       # 시스템 로그 뷰어가 집계할 다른 서비스 목록 ("name:url,name:url").
-      # queue를 추가하면: LOG_SERVICES: "queue:http://queue:9300"
-      LOG_SERVICES: ""
+      LOG_SERVICES: "queue:http://queue:9300"
     volumes:
       - ./auth/data:/home/node/ev-auth/data
     restart: unless-stopped
@@ -43,34 +42,37 @@ services:
     networks:
       - ev-network
 
-  # 등록 대기열 — 구현 후 아래 블록의 주석을 해제한다.
-  # landing/Caddyfile의 /queue 라우트, caddy depends_on, auth의 LOG_SERVICES도 함께 켠다.
-  # queue:
-  #   image: ghcr.io/luftaquila/ev-student-korea/queue:latest
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.service
-  #     args:
-  #       SERVICE: queue
-  #       PORT: 9300
-  #   container_name: ev-queue
-  #   security_opt:
-  #     - label:disable
-  #   environment:
-  #     <<: *common-env
-  #     AUTH_SERVER: http://auth:9100
-  #   volumes:
-  #     - ./queue/data:/home/node/ev-queue/data
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     <<: *common-healthcheck
-  #     test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9300/api/health"]
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 512M
-  #   networks:
-  #     - ev-network
+  # 등록 대기열 — SMS 알림은 Naver Cloud SENS credential(4개 전부)이 있어야 켜진다.
+  queue:
+    image: ghcr.io/luftaquila/ev-student-korea/queue:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: queue
+        PORT: 9300
+    container_name: ev-queue
+    security_opt:
+      - label:disable
+    environment:
+      <<: *common-env
+      AUTH_SERVER: http://auth:9100
+      NAVER_CLOUD_ACCESS_KEY: ${NAVER_CLOUD_ACCESS_KEY:-}
+      NAVER_CLOUD_SECRET_KEY: ${NAVER_CLOUD_SECRET_KEY:-}
+      NAVER_CLOUD_SMS_SERVICE_ID: ${NAVER_CLOUD_SMS_SERVICE_ID:-}
+      PHONE_NUMBER_SMS_SENDER: ${PHONE_NUMBER_SMS_SENDER:-}
+    volumes:
+      - ./queue/data:/home/node/ev-queue/data
+    restart: unless-stopped
+    healthcheck:
+      <<: *common-healthcheck
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9300/api/health"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - ev-network
 
   # Production - traefik이 TLS를 종료하고 Host 라우팅으로 이 컨테이너에 넘긴다
   caddy:
@@ -95,7 +97,7 @@ services:
       # 서비스가 늘어나면 나머지는 service_started로 추가한다 — 단일 백엔드의 헬스
       # 크래시루프가 caddy 재생성을 무한 대기시켜 전면 outage로 번지는 것을 막는다.
       auth: { condition: service_healthy }
-      # queue: { condition: service_started }
+      queue: { condition: service_started }
     restart: unless-stopped
     environment:
       - DOMAIN_NAME=${DOMAIN_NAME}

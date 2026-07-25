@@ -31,10 +31,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 서비스가 2개뿐이라 경로 필터 없이 항상 둘 다 빌드한다(shared/ 변경이 양쪽에 영향).
+          # 서비스 수가 적어 경로 필터 없이 항상 전부 빌드한다(shared/ 변경이 모두에 영향).
           # arm64는 네이티브 러너를 쓴다 — QEMU 에뮬레이션으로 vite 빌드를 돌리면 수 배 느리다.
           - { service: auth,  port: 9100, arch: amd64, runner: ubuntu-latest,    platform: linux/amd64 }
           - { service: auth,  port: 9100, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64 }
+          - { service: queue, port: 9300, arch: amd64, runner: ubuntu-latest,    platform: linux/amd64 }
+          - { service: queue, port: 9300, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64 }
           - { service: caddy, arch: amd64, runner: ubuntu-latest,    platform: linux/amd64 }
           - { service: caddy, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64 }
     steps:
@@ -101,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, caddy]
+        service: [auth, queue, caddy]
     steps:
       - uses: docker/login-action@v4
         with:

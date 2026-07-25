@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-force-exit tests/**/*.test.mjs",
-    "test:auth": "node --test --test-force-exit tests/auth/*.test.mjs"
+    "test:auth": "node --test --test-force-exit tests/auth/*.test.mjs",
+    "test:queue": "node --test --test-force-exit tests/queue/*.test.mjs"
   }
 }

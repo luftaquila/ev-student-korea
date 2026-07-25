@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-EV Student Korea Service Hub — EV 대회 운영을 위한 서비스 허브. 현재는 랜딩 게이트웨이와 인증
-서비스 2개로 구성되며, 등록 대기열(`queue/`)은 랜딩 카드만 있고 구현 예정이다.
+EV Student Korea Service Hub — EV 대회 운영을 위한 서비스 허브. 랜딩 게이트웨이, 인증 서비스,
+등록 대기열 서비스로 구성된다.
 
 ## Architecture
 
@@ -9,10 +9,11 @@ EV Student Korea Service Hub — EV 대회 운영을 위한 서비스 허브. �
 |---------|-------------|------|
 | landing/ | 랜딩 페이지 + 리버스 프록시 게이트웨이 (Vue 3 + Caddy) | 9000 |
 | auth/ | 인증·계정 관리·시스템 로그 (Express + Vue 3) | 9100 |
-| queue/ | 등록 대기열 — **미구현**, 포트만 예약 | 9300 |
+| queue/ | 등록 대기열 — 대기 등록·순서 조회·SMS 알림·엔트리 관리 | 9300 |
 
 ```
-Traefik (TLS, Host(${DOMAIN_NAME})) → Caddy :9000 ─┬─ handle_path /auth/* → auth:9100
+Traefik (TLS, Host(${DOMAIN_NAME})) → Caddy :9000 ─┬─ handle_path /auth/*  → auth:9100
+                                                    ├─ handle_path /queue/* → queue:9300
                                                     └─ handle (catch-all) → /srv/landing
 ```
 
@@ -20,15 +21,23 @@ Traefik (TLS, Host(${DOMAIN_NAME})) → Caddy :9000 ─┬─ handle_path /auth/
 공유하고, 공용 모듈은 `shared/`에 둔다 — 백엔드는 `../shared/*.mjs`, 프론트는 Vite alias
 `@shared`로 참조한다.
 
-### 등록 대기열을 추가할 때
+### 등록 대기열 (queue/)
 
-`queue/`를 `auth/`와 같은 모양(팩토리 `createQueueApp(options)` + `index.mjs` + `web/`)으로 만들고
-다음 4곳의 주석을 해제·수정한다:
+학회 등록 줄 대체 서비스. formula-student-korea의 검차 대기열을 단순화한 구조로, 부스·우선순위·
+재검 같은 개념 없이 단일 FIFO 대기열 하나만 운영한다.
 
-1. `landing/Caddyfile` — `handle_path /queue/*` → `queue:9300`
-2. `compose.yml` — `queue` 서비스 블록 + `caddy`/`caddy-local`의 `depends_on`
-3. `compose.yml` — auth의 `LOG_SERVICES`에 `queue:http://queue:9300` 추가 (시스템 로그 집계)
-4. `shared/nav-config.js` — `services[0]`의 `disabled`/`badge` 제거
+- 흐름: 학생이 태블릿(`/register`, official 세션)에서 **엔트리 번호+전화번호**로 등록 →
+  대기 N번째 진입 시 사전 안내 SMS → 오피셜이 `/manage`에서 호출(호출 SMS 발송) → 완료/취소.
+- 공개 페이지 `/`: 엔트리 번호+전화번호 쌍으로 자기 순번·전체 대기 인원 조회 (rate limit 30/min/IP).
+- 엔트리 목록은 admin이 `/entries`에서 관리한다(`shared/nav-config.js`의 adminMenu에 등록됨).
+  대기 등록은 엔트리 테이블에 있는 번호만 허용된다.
+- 설정(settings 테이블, `/manage`에서 변경): `open`(접수), `sms`(알림), `notify_rank`(사전 안내
+  순번, 0=끔), `event_name`(문자 앞머리).
+- SMS는 Naver Cloud SENS. credential은 env 4종(`NAVER_CLOUD_ACCESS_KEY` ·
+  `NAVER_CLOUD_SECRET_KEY` · `NAVER_CLOUD_SMS_SERVICE_ID` · `PHONE_NUMBER_SMS_SENDER`)이며
+  **FSK와 동일한 값**을 쓴다(FSK는 email 서비스 DB에 보관, EV는 env로 직접 주입). 하나라도
+  없으면 SMS 없이 동작하고 설정 UI에 미설정 배지가 뜬다. 테스트는 `createQueueApp({ sendSms })`로
+  발송을 가로챈다.
 
 ## Tech Stack
 
@@ -40,8 +49,8 @@ Frontend: Vue 3, Vite 7, Vue Router 4, vue-sonner · Backend: Node.js 22, Expres
 
 ```bash
 # 프론트
-cd {service}/web && npm run dev|build     # auth (build는 프로덕션 base /auth/)
-cd auth/web && npm run build:dev          # base 없음 — 백엔드에 직접 붙어 볼 때
+cd {service}/web && npm run dev|build     # auth·queue (build는 프로덕션 base /<service>/)
+cd {service}/web && npm run build:dev     # base 없음 — 백엔드에 직접 붙어 볼 때
 cd landing && npm run dev|build           # landing
 
 # 백엔드 (index.mjs는 create*App(options) 팩토리를 export하고 직접 실행 시에만 listen)
@@ -60,24 +69,26 @@ make restart                   # 재시작만
 프로덕션은 compose가 아니라 **luftwolke의 k3s + Flux**다. compose/Makefile은 로컬 확인용.
 
 ```
-main push → GitHub Actions(build.yml) → ghcr.io/luftaquila/ev-student-korea/{auth,caddy}:latest
+main push → GitHub Actions(build.yml) → ghcr.io/luftaquila/ev-student-korea/{auth,queue,caddy}:latest
           → Flux가 luftaquila/k3s pull → ev 네임스페이스 반영 (~1분)
 ```
 
-- 매니페스트: `luftaquila/k3s` → `clusters/luftwolke/apps/ev/`
-  (`namespace.yaml` · `configmap.yaml` · `auth.yaml` · `caddy.yaml` · `kustomization.yaml`)
+- 매니페스트: `luftaquila/k3s` → `clusters/luftwolke/apps/ev/` (`namespace.yaml` ·
+  `configmap.yaml` · `auth.yaml` · `queue.yaml` · `caddy.yaml` · `kustomization.yaml`)
 - 외부 노출은 **caddy 하나뿐**. IngressRoute가 `Host(ev.luftaquila.io)` → `caddy:9000`,
-  caddy가 `/auth/*` → k8s Service `auth:9100`으로 프록시한다(compose와 동일한 Caddyfile).
-- 시크릿은 git에 없다. `ev-secrets`(JWT_SECRET · INTERNAL_SECRET · GOOGLE_CLIENT_SECRET)를
-  `kubectl create secret`으로 주입하고 매니페스트는 `secretRef`만 참조한다. FSK와 같은 값을 쓴다.
+  caddy가 `/auth/*` → `auth:9100`, `/queue/*` → `queue:9300`으로 프록시한다(compose와 동일한
+  Caddyfile).
+- 시크릿은 git에 없다. `ev-secrets`(JWT_SECRET · INTERNAL_SECRET · GOOGLE_CLIENT_SECRET ·
+  NAVER_CLOUD_ACCESS_KEY · NAVER_CLOUD_SECRET_KEY · NAVER_CLOUD_SMS_SERVICE_ID ·
+  PHONE_NUMBER_SMS_SENDER)를 `kubectl create secret`으로 주입하고 매니페스트는 `secretRef`만
+  참조한다. FSK와 같은 값을 쓴다(SENS credential은 FSK email 서비스 설정과 동일).
 - 비시크릿은 `ev-config` ConfigMap(NODE_ENV · TEST_SERVER · ADMIN_EMAIL · GOOGLE_CLIENT_ID ·
   PUBLIC_URL · DOMAIN_NAME).
-- 데이터는 `/home/k3s-data/ev/auth` hostPath. 전 앱 `runAsUser:0` + `seLinuxOptions: spc_t` 규칙.
-- 같은 `:latest`로 이미지를 새로 밀었으면 `kubectl -n ev rollout restart deploy/auth`.
+- 데이터는 `/home/k3s-data/ev/{auth,queue}` hostPath. 전 앱 `runAsUser:0` +
+  `seLinuxOptions: spc_t` 규칙.
+- 같은 `:latest`로 이미지를 새로 밀었으면 `kubectl -n ev rollout restart deploy/auth`
+  (또는 `deploy/queue`).
 - 상태 확인: `flux get kustomizations` · `kubectl -n ev get pods`.
-
-queue 서비스를 추가하면 `clusters/luftwolke/apps/ev/queue.yaml`(+ kustomization 등록,
-`/home/k3s-data/ev/queue` 생성)과 이 저장소의 Caddyfile·auth `LOG_SERVICES`를 함께 켠다.
 
 클러스터 전체 규칙(Flux·TLS·백업·로컬 빌드 검증 절차)은 luftwolke의 `/srv/k3s/README.md`가 권위.
 

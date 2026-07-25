@@ -12,6 +12,7 @@ export const icons = {
   // 관리
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M17.5 10.5h4M19.5 8.5v4"/>',
   logs: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9.5 12h6M9.5 16h6M9.5 8h2.5"/>',
+  list: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="m3.5 5.5 1 1 2-2"/><path d="m3.5 11.5 1 1 2-2"/><path d="m3.5 17.5 1 1 2-2"/>',
 
   // 상태 / 액션
   external: '<path d="M14 4h6v6"/><path d="M20 4 10.5 13.5"/><path d="M18 14.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.5"/>',
