@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import AppIcon from "@shared/AppIcon.vue";
 import { useNotification } from "@shared/useNotification.js";
 import { formatDate } from "@shared/format-date.js";
+import { displayPhone } from "@shared/format-phone.js";
 import * as api from "../api.js";
 
 const { success, error } = useNotification();
@@ -144,7 +145,7 @@ onUnmounted(() => clearInterval(timer));
               <td class="cell-mono">{{ row.num }}</td>
               <td>{{ row.school || "-" }}</td>
               <td>{{ row.team || "팀 미등록" }}</td>
-              <td class="cell-mono">{{ row.phone }}</td>
+              <td class="cell-mono"><a :href="`tel:${row.phone}`">{{ displayPhone(row.phone) }}</a></td>
               <td class="cell-mono nowrap dim">{{ formatDate(row.called_at) }}</td>
               <!-- 버튼은 래퍼 안에서 flex로 정렬한다. td에 직접 display:flex를 걸면
                    셀이 테이블 레이아웃에서 빠져나와 행 높이·보더가 어긋난다. -->
@@ -184,7 +185,7 @@ onUnmounted(() => clearInterval(timer));
               <td class="cell-mono">{{ row.num }}</td>
               <td>{{ row.school || "-" }}</td>
               <td>{{ row.team || "팀 미등록" }}</td>
-              <td class="cell-mono">{{ row.phone }}</td>
+              <td class="cell-mono"><a :href="`tel:${row.phone}`">{{ displayPhone(row.phone) }}</a></td>
               <td class="cell-mono nowrap dim">{{ formatDate(row.registered_at) }}</td>
               <td>
                 <span v-if="row.notified" class="badge badge-ok">발송됨</span>

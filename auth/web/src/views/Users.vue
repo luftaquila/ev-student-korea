@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import AppIcon from "@shared/AppIcon.vue";
 import { useNotification } from "@shared/useNotification.js";
 import { formatDate } from "@shared/format-date.js";
+import { formatPhone } from "@shared/format-phone.js";
 import { ROLE_LABELS } from "@shared/userStore.js";
 import * as api from "../api.js";
 
@@ -233,7 +234,10 @@ async function bulkRemove() {
       </div>
       <div class="field">
         <label class="field-label" for="new-phone">연락처</label>
-        <input id="new-phone" v-model="form.phone" class="input" type="tel">
+        <input
+          id="new-phone" class="input" type="tel" inputmode="numeric" maxlength="13"
+          :value="form.phone" @input="form.phone = formatPhone($event.target.value)"
+        >
       </div>
       <button class="btn btn-primary" type="submit" :disabled="busy">추가</button>
     </form>
@@ -319,10 +323,13 @@ async function bulkRemove() {
             </td>
             <td>
               <input
-                v-model="row.phone"
                 class="input input-inline input-mono"
                 type="tel"
+                inputmode="numeric"
+                maxlength="13"
                 placeholder="연락처"
+                :value="row.phone"
+                @input="row.phone = formatPhone($event.target.value)"
                 @focus="editStart(row, 'phone')"
                 @blur="editEnd(row, 'phone')"
               >

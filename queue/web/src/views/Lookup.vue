@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import AppIcon from "@shared/AppIcon.vue";
 import { formatDate } from "@shared/format-date.js";
+import { formatPhone } from "@shared/format-phone.js";
 import * as api from "../api.js";
 
 // 조회 정보를 저장해 두면 학생이 다시 들어왔을 때 바로 자기 순서가 보인다
@@ -65,7 +66,7 @@ onMounted(() => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     if (saved?.num && saved?.phone) {
-      form.value = { num: saved.num, phone: saved.phone };
+      form.value = { num: saved.num, phone: formatPhone(saved.phone) };
       doLookup({ silent: true });
     }
   } catch { /* 저장값 손상 — 무시 */ }
@@ -149,9 +150,12 @@ onUnmounted(() => clearInterval(timer));
         </div>
         <div class="field">
           <label class="field-label" for="lookup-phone">전화번호</label>
+          <!-- 등록 화면과 같은 규칙으로 입력 중 하이픈을 자동으로 넣는다 -->
           <input
-            id="lookup-phone" v-model="form.phone" class="input input-mono" type="tel"
+            id="lookup-phone" class="input input-mono" type="tel"
+            inputmode="numeric" maxlength="13"
             placeholder="010-0000-0000" autocomplete="off"
+            :value="form.phone" @input="form.phone = formatPhone($event.target.value)"
           >
         </div>
         <button class="btn btn-primary submit" type="submit" :disabled="busy">

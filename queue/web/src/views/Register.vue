@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, watch, onMounted, onUnmounted } from "vue";
 import AppIcon from "@shared/AppIcon.vue";
+import { formatPhone, isMobilePhone } from "@shared/format-phone.js";
 import * as api from "../api.js";
 
 // 오피셜이 등록 데스크 태블릿에 띄워두는 화면. 엔트리 번호와 전화번호를 한 화면에서 받고,
 // 번호를 입력하는 즉시 해당 엔트리의 학교·팀을 확인시켜 준다(오입력 방지).
 
 const num = ref("");
-const phone = ref("");
+const phone = ref("010");       // 태블릿 입력을 줄이기 위해 접두사를 미리 채운다
 const agreed = ref(false);      // 개인정보 수집·이용 동의 (없으면 등록 불가)
 const entry = ref(null);        // 확인된 엔트리 { num, school, team, queue_status }
 const entryError = ref("");     // 번호 조회 실패 메시지
@@ -24,14 +25,21 @@ let countdownTimer = null;
 let lookupTimer = null;
 let lookupSeq = 0;              // 늦게 도착한 응답이 최신 입력을 덮어쓰지 않게 한다
 
-const canSubmit = computed(() =>
-  !!entry.value && !entry.value.queue_status && phone.value.trim().length >= 10
-  && agreed.value && !busy.value);
-
 async function loadStatus() {
   try {
     status.value = await api.fetchStatus();
   } catch { /* 다음 주기에 재시도 */ }
+}
+
+function onPhoneInput(e) {
+  phone.value = formatPhone(e.target.value);
+  submitError.value = "";
+}
+
+// 입력을 고치면 직전 오류 문구는 지운다 — 동의를 눌렀는데 "동의하세요"가 남아 있으면 안 된다
+function toggleAgreed() {
+  agreed.value = !agreed.value;
+  submitError.value = "";
 }
 
 // 번호 입력이 멈추면(250ms) 엔트리를 조회한다
@@ -66,7 +74,7 @@ function reset() {
   clearTimeout(lookupTimer);
   lookupSeq++;
   num.value = "";
-  phone.value = "";
+  phone.value = "010";
   agreed.value = false;
   entry.value = null;
   entryError.value = "";
@@ -77,7 +85,28 @@ function reset() {
 }
 
 async function submit() {
-  if (!canSubmit.value) return;
+  if (busy.value) return;
+
+  // 검증 순서는 화면 위에서 아래로 — 어디를 고쳐야 하는지 바로 보이게 한다
+  if (!entry.value) {
+    submitError.value = entryError.value || "엔트리 번호를 입력하세요.";
+    return;
+  }
+  if (entry.value.queue_status) {
+    submitError.value = entry.value.queue_status === "called"
+      ? "이미 호출된 엔트리입니다. 등록 데스크에 문의하세요."
+      : "이미 대기 중인 엔트리입니다.";
+    return;
+  }
+  if (!isMobilePhone(phone.value)) {
+    submitError.value = "전화번호를 정확히 입력하세요.";
+    return;
+  }
+  if (!agreed.value) {
+    submitError.value = "개인정보 수집 및 이용에 동의하세요.";
+    return;
+  }
+
   busy.value = true;
   submitError.value = "";
   try {
@@ -171,24 +200,31 @@ onUnmounted(() => {
 
       <div class="field">
         <label class="field-label" for="reg-phone">전화번호</label>
+        <!-- 입력 중 하이픈을 자동으로 넣는다(formatPhone). v-model이면 커서가 튀므로
+             :value + @input으로 제어한다. maxlength는 "010-1234-5678" 13자 기준. -->
         <input
-          id="reg-phone" v-model="phone" class="input big-input input-mono" type="tel"
+          id="reg-phone" class="input big-input input-mono" type="tel"
+          inputmode="numeric" maxlength="13"
           placeholder="010-0000-0000" autocomplete="off"
+          :value="phone" @input="onPhoneInput"
         >
       </div>
 
-      <!-- 개인정보 수집·이용 동의 (전화번호를 받으므로 필수) -->
-      <label class="consent">
-        <input v-model="agreed" type="checkbox">
+      <!-- 개인정보 수집·이용 동의. 태블릿에서 누르기 쉽도록 영역 전체가 버튼이다. -->
+      <button
+        type="button" class="consent" :class="{ agreed }"
+        :aria-pressed="agreed" @click="toggleAgreed"
+      >
+        <span class="consent-box"><AppIcon v-if="agreed" name="check" /></span>
         <span class="consent-text">
-          <strong>개인정보 수집 및 이용 동의</strong>
-          <span class="dim">전화번호는 대기 순서 안내 문자에만 사용합니다.</span>
+          <strong>개인정보 수집 및 이용에 동의합니다</strong>
+          <small>전화번호는 대기 순서 안내 문자에만 사용합니다.</small>
         </span>
-      </label>
+      </button>
 
       <p v-if="submitError" class="error">{{ submitError }}</p>
 
-      <button class="btn btn-primary big-btn" type="submit" :disabled="!canSubmit">대기 등록</button>
+      <button class="btn btn-primary big-btn" type="submit" :disabled="busy">대기 등록</button>
     </form>
   </div>
 </template>
@@ -295,30 +331,71 @@ onUnmounted(() => {
   font-size: 0.8125rem;
 }
 
-/* 동의 문구는 체크박스 첫 줄에 시각적으로 맞춘다 */
+/* 동의 영역 전체가 탭 대상이다(태블릿에서 체크박스만 누르기는 어렵다) */
 .consent {
   display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.85rem;
+  font-family: var(--font-body);
+  color: var(--text-primary);
   text-align: left;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.consent input {
-  margin-top: 0.2rem;
+.consent:hover {
+  border-color: var(--border-strong);
+}
+
+.consent.agreed {
+  background: var(--accent-success-soft);
+  border-color: var(--accent-success);
+}
+
+.consent-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.consent.agreed .consent-box {
+  color: var(--text-on-accent);
+  background: var(--accent-success);
+  border-color: var(--accent-success);
+}
+
+.consent-box .icon {
+  width: 18px;
+  height: 18px;
 }
 
 .consent-text {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  font-size: 0.875rem;
   line-height: 1.45;
   word-break: keep-all;
 }
 
-.consent-text .dim {
+.consent-text strong {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.consent-text small {
   font-size: 0.8125rem;
+  color: var(--text-tertiary);
 }
 
 .error {
