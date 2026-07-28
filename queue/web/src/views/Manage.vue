@@ -11,15 +11,13 @@ const board = ref(null);   // { waiting, called, today, settings }
 const busy = ref(false);
 const loading = ref(true);
 
-// 설정 입력값은 저장 버튼을 누를 때만 반영한다(스위치는 즉시 저장).
+// 사전 안내 순번은 저장 버튼을 누를 때만 반영한다(스위치는 즉시 저장).
 const rankInput = ref(0);
-const eventNameInput = ref("");
 
 async function load() {
   try {
     board.value = await api.fetchQueue();
     rankInput.value = board.value.settings.notify_rank;
-    eventNameInput.value = board.value.settings.event_name;
   } catch (e) {
     error(e.message);
   } finally {
@@ -33,7 +31,6 @@ async function saveSettings(patch, message) {
     const settings = await api.updateSettings(patch);
     board.value.settings = settings;
     rankInput.value = settings.notify_rank;
-    eventNameInput.value = settings.event_name;
     success(message);
   } catch (e) {
     error(e.message);
@@ -61,7 +58,7 @@ async function act(fn, row, message, { confirmText } = {}) {
 const callRow = (row) => act(api.callRegistration, row, `엔트리 ${row.num}번을 호출했습니다.`);
 const doneRow = (row) => act(api.doneRegistration, row, `엔트리 ${row.num}번 등록을 완료했습니다.`);
 const cancelRow = (row) => act(api.cancelRegistration, row, `엔트리 ${row.num}번 대기를 취소했습니다.`,
-  { confirmText: `엔트리 ${row.num}번 (${row.name || "이름 미등록"}) 대기를 취소할까요?` });
+  { confirmText: `엔트리 ${row.num}번 (${row.team || "팀 미등록"}) 대기를 취소할까요?` });
 
 let timer = null;
 
@@ -92,9 +89,7 @@ onUnmounted(() => clearInterval(timer));
     <section class="panel settings-panel">
       <div class="panel-head">
         <span class="panel-title">설정</span>
-        <span v-if="!board.settings.sms_available" class="badge badge-warn">
-          SMS 발송 설정 없음 — 서버에 Naver Cloud credential이 필요합니다
-        </span>
+        <span v-if="!board.settings.sms_available" class="badge badge-warn">SMS 미설정</span>
       </div>
       <div class="panel-body settings-body">
         <label class="setting-item">
@@ -117,6 +112,9 @@ onUnmounted(() => clearInterval(timer));
             >
             <span class="switch-track"></span>
           </span>
+          <span v-if="!board.settings.sms_available" class="dim">
+            서버에 Naver Cloud credential이 없어 발송할 수 없습니다.
+          </span>
         </label>
 
         <div class="setting-item">
@@ -135,15 +133,10 @@ onUnmounted(() => clearInterval(timer));
         </div>
 
         <div class="setting-item">
-          <label class="setting-label" for="event-name">문자 앞머리 (대회명)</label>
-          <div class="row-wrap">
-            <input id="event-name" v-model="eventNameInput" class="input input-event" type="text" maxlength="30">
-            <button
-              class="btn btn-sm" type="button" :disabled="busy || eventNameInput === board.settings.event_name"
-              @click="saveSettings({ event_name: eventNameInput }, '대회명을 저장했습니다.')"
-            >저장</button>
-          </div>
-          <span class="dim">문자가 "[{{ eventNameInput || "…" }}] 엔트리 3번 차례입니다." 형태로 발송됩니다.</span>
+          <span class="setting-label">문자 형식</span>
+          <span class="dim sms-sample">
+            {{ board.settings.sms_prefix }} 엔트리 3번 차례입니다. 지금 등록 데스크로 와주세요.
+          </span>
         </div>
       </div>
     </section>
@@ -158,16 +151,14 @@ onUnmounted(() => clearInterval(timer));
         <table class="data-table">
           <thead>
             <tr>
-              <th>엔트리</th><th>팀명</th><th>전화번호</th><th>호출 시각</th><th class="text-right"></th>
+              <th>엔트리</th><th>학교</th><th>팀</th><th>전화번호</th><th>호출 시각</th><th class="text-right"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in board.called" :key="row.id">
               <td class="cell-mono">{{ row.num }}</td>
-              <td>
-                {{ row.name || "이름 미등록" }}
-                <span v-if="row.affiliation" class="dim"> · {{ row.affiliation }}</span>
-              </td>
+              <td>{{ row.school || "-" }}</td>
+              <td>{{ row.team || "팀 미등록" }}</td>
               <td class="cell-mono">{{ row.phone }}</td>
               <td class="cell-mono nowrap dim">{{ formatDate(row.called_at) }}</td>
               <td class="text-right actions">
@@ -194,7 +185,7 @@ onUnmounted(() => clearInterval(timer));
         <table class="data-table">
           <thead>
             <tr>
-              <th class="col-rank">순번</th><th>엔트리</th><th>팀명</th><th>전화번호</th>
+              <th class="col-rank">순번</th><th>엔트리</th><th>학교</th><th>팀</th><th>전화번호</th>
               <th>등록 시각</th><th>사전 안내</th><th class="text-right"></th>
             </tr>
           </thead>
@@ -202,10 +193,8 @@ onUnmounted(() => clearInterval(timer));
             <tr v-for="row in board.waiting" :key="row.id">
               <td class="cell-mono rank-cell">{{ row.position }}</td>
               <td class="cell-mono">{{ row.num }}</td>
-              <td>
-                {{ row.name || "이름 미등록" }}
-                <span v-if="row.affiliation" class="dim"> · {{ row.affiliation }}</span>
-              </td>
+              <td>{{ row.school || "-" }}</td>
+              <td>{{ row.team || "팀 미등록" }}</td>
               <td class="cell-mono">{{ row.phone }}</td>
               <td class="cell-mono nowrap dim">{{ formatDate(row.registered_at) }}</td>
               <td>
@@ -273,13 +262,20 @@ onUnmounted(() => clearInterval(timer));
   width: 5rem;
 }
 
-.input-event {
-  width: 13rem;
+.sms-sample {
+  max-width: 18rem;
 }
 
 .called-panel {
   margin-bottom: var(--spacing-md);
   border-color: var(--accent-primary);
+}
+
+/* 좁은 화면에서 표를 컨테이너 폭에 억지로 맞추면 한글 셀이 한 글자씩 세로로 끊긴다.
+   셀은 nowrap으로 두고 넘치는 폭은 .table-wrap의 가로 스크롤에 맡긴다. */
+.data-table th,
+.data-table td {
+  white-space: nowrap;
 }
 
 .col-rank {

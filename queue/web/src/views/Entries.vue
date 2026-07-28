@@ -12,7 +12,7 @@ const search = ref("");
 const selectedNums = ref([]);
 const busy = ref(false);
 
-const form = ref({ num: "", name: "", affiliation: "" });
+const form = ref({ num: "", school: "", team: "" });
 const bulkOpen = ref(false);
 const bulkText = ref("");
 
@@ -22,7 +22,7 @@ const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
   if (!q) return entries.value;
   return entries.value.filter((e) =>
-    [String(e.num), e.name, e.affiliation].some((v) => (v || "").toLowerCase().includes(q)),
+    [String(e.num), e.school, e.team].some((v) => (v || "").toLowerCase().includes(q)),
   );
 });
 
@@ -66,7 +66,7 @@ async function addEntry() {
   try {
     await api.createEntry(form.value);
     success(`엔트리 ${form.value.num}번을 추가했습니다.`);
-    form.value = { num: "", name: "", affiliation: "" };
+    form.value = { num: "", school: "", team: "" };
     await load();
   } catch (e) {
     error(e.message);
@@ -75,15 +75,15 @@ async function addEntry() {
   }
 }
 
-// 한 줄에 "번호, 팀명, 소속" (쉼표 또는 탭 구분)
+// 한 줄에 "번호, 학교, 팀" (쉼표 또는 탭 구분)
 function parseBulk(text) {
   return text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [num, name, affiliation] = line.split(/[\t,]/).map((s) => (s || "").trim());
-      return { num, name, affiliation };
+      const [num, school, team] = line.split(/[\t,]/).map((s) => (s || "").trim());
+      return { num, school, team };
     });
 }
 
@@ -131,7 +131,7 @@ async function editEnd(row, field) {
 }
 
 async function removeEntry(row) {
-  if (!confirm(`엔트리 ${row.num}번 (${row.name})을 삭제할까요?`)) return;
+  if (!confirm(`엔트리 ${row.num}번 (${row.team})을 삭제할까요?`)) return;
   try {
     await api.deleteEntry(row.num);
     success(`엔트리 ${row.num}번을 삭제했습니다.`);
@@ -182,17 +182,17 @@ async function bulkRemove() {
     <form class="panel-body toolbar" @submit.prevent="addEntry">
       <div class="field">
         <label class="field-label" for="new-num">번호 (필수)</label>
-        <input id="new-num" v-model="form.num" class="input" type="text" inputmode="numeric" placeholder="예: 12" autocomplete="off">
+        <input id="new-num" v-model="form.num" class="input" type="text" inputmode="numeric" autocomplete="off">
       </div>
       <div class="field grow">
-        <label class="field-label" for="new-name">팀명 (필수)</label>
-        <input id="new-name" v-model="form.name" class="input" type="text" placeholder="팀명" autocomplete="off">
+        <label class="field-label" for="new-school">학교</label>
+        <input id="new-school" v-model="form.school" class="input" type="text" autocomplete="off">
       </div>
       <div class="field grow">
-        <label class="field-label" for="new-affiliation">소속</label>
-        <input id="new-affiliation" v-model="form.affiliation" class="input" type="text" placeholder="선택">
+        <label class="field-label" for="new-team">팀 (필수)</label>
+        <input id="new-team" v-model="form.team" class="input" type="text" autocomplete="off">
       </div>
-      <button class="btn btn-primary" type="submit" :disabled="busy || !form.num.trim() || !form.name.trim()">추가</button>
+      <button class="btn btn-primary" type="submit" :disabled="busy || !form.num.trim() || !form.team.trim()">추가</button>
     </form>
   </section>
 
@@ -203,7 +203,7 @@ async function bulkRemove() {
       <div class="row-wrap">
         <div class="search">
           <AppIcon name="search" />
-          <input v-model="search" class="input input-search" type="search" placeholder="번호·팀명·소속 검색">
+          <input v-model="search" class="input input-search" type="search" placeholder="번호·학교·팀 검색">
         </div>
         <button class="btn btn-icon" type="button" title="새로고침" @click="load">
           <AppIcon name="refresh" />
@@ -230,8 +230,8 @@ async function bulkRemove() {
               <input type="checkbox" :checked="allSelected" aria-label="전체 선택" @change="toggleAll($event.target.checked)">
             </th>
             <th>번호</th>
-            <th>팀명</th>
-            <th>소속</th>
+            <th>학교</th>
+            <th>팀</th>
             <th>대기 상태</th>
             <th></th>
           </tr>
@@ -244,22 +244,20 @@ async function bulkRemove() {
             <td class="cell-mono num-cell">{{ row.num }}</td>
             <td>
               <input
-                v-model="row.name"
+                v-model="row.school"
                 class="input input-inline"
                 type="text"
-                placeholder="팀명"
-                @focus="editStart(row, 'name')"
-                @blur="editEnd(row, 'name')"
+                @focus="editStart(row, 'school')"
+                @blur="editEnd(row, 'school')"
               >
             </td>
             <td>
               <input
-                v-model="row.affiliation"
+                v-model="row.team"
                 class="input input-inline"
                 type="text"
-                placeholder="소속"
-                @focus="editStart(row, 'affiliation')"
-                @blur="editEnd(row, 'affiliation')"
+                @focus="editStart(row, 'team')"
+                @blur="editEnd(row, 'team')"
               >
             </td>
             <td>
@@ -298,16 +296,16 @@ async function bulkRemove() {
       </div>
       <div class="modal-body stack">
         <div class="field">
-          <label class="field-label" for="bulk-text">한 줄에 하나 — 번호, 팀명, 소속</label>
+          <label class="field-label" for="bulk-text">한 줄에 하나 — 번호, 학교, 팀</label>
           <textarea
             id="bulk-text"
             v-model="bulkText"
             class="input input-mono"
             rows="9"
-            placeholder="1, 팀이름, OO대학교&#10;2, 다른팀"
+            placeholder="1, 한국대학교, 팀이름&#10;2, 서울대학교, 다른팀"
           ></textarea>
         </div>
-        <p class="dim">이미 등록된 번호는 건너뜁니다. 소속은 생략할 수 있습니다.</p>
+        <p class="dim">이미 등록된 번호는 건너뜁니다. 학교는 생략할 수 있습니다.</p>
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" type="button" @click="bulkOpen = false">취소</button>

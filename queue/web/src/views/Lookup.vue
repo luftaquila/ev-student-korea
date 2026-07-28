@@ -48,6 +48,15 @@ async function doLookup({ silent = false } = {}) {
   }
 }
 
+// 결과 카드에서 조회 폼으로 돌아간다(저장값도 버려 자동 조회가 다시 걸리지 않게 한다)
+function resetLookup() {
+  result.value = null;
+  notFound.value = false;
+  errorMsg.value = "";
+  form.value = { num: "", phone: "" };
+  localStorage.removeItem(STORAGE_KEY);
+}
+
 let timer = null;
 
 onMounted(() => {
@@ -72,185 +81,186 @@ onUnmounted(() => clearInterval(timer));
 </script>
 
 <template>
-  <div class="page-head">
-    <div>
-      <h1 class="page-title">등록 대기 현황</h1>
-      <p class="page-desc">엔트리 번호와 대기 등록 시 입력한 전화번호로 내 순서를 확인할 수 있습니다.</p>
-    </div>
-  </div>
-
-  <!-- 전체 현황 -->
-  <section v-if="status" class="panel overview">
-    <div class="overview-stat">
-      <span class="overview-num">{{ status.waiting }}</span>
-      <span class="overview-label">현재 대기</span>
-    </div>
-    <div class="overview-side">
+  <div class="lookup">
+    <!-- 현황 요약: 조회 결과와 경쟁하지 않도록 카드가 아닌 한 줄 스트립으로 둔다 -->
+    <div v-if="status" class="status-strip">
       <span class="badge" :class="status.open ? 'badge-ok' : 'badge-danger'">
         {{ status.open ? "접수 중" : "접수 마감" }}
       </span>
-      <div v-if="status.called.length" class="called-chips">
-        <span class="dim">호출됨</span>
-        <span v-for="c in status.called" :key="c.num" class="badge badge-accent">{{ c.num }}번</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- 내 순서 조회 -->
-  <section class="panel">
-    <div class="panel-head">
-      <span class="panel-title">내 순서 조회</span>
-    </div>
-    <form class="panel-body toolbar" @submit.prevent="doLookup()">
-      <div class="field">
-        <label class="field-label" for="lookup-num">엔트리 번호</label>
-        <input
-          id="lookup-num" v-model="form.num" class="input" type="text"
-          inputmode="numeric" placeholder="예: 12" autocomplete="off"
-        >
-      </div>
-      <div class="field grow">
-        <label class="field-label" for="lookup-phone">전화번호</label>
-        <input
-          id="lookup-phone" v-model="form.phone" class="input input-mono" type="tel"
-          placeholder="010-0000-0000" autocomplete="off"
-        >
-      </div>
-      <button class="btn btn-primary" type="submit" :disabled="busy">
-        <AppIcon name="search" /><span>조회</span>
-      </button>
-    </form>
-    <p v-if="errorMsg" class="lookup-error">{{ errorMsg }}</p>
-  </section>
-
-  <!-- 조회 결과 -->
-  <section v-if="result" class="panel result" :class="{ 'result-called': result.status === 'called' }">
-    <div class="result-team">
-      <span class="badge badge-muted">엔트리 {{ result.num }}</span>
-      <span class="team-name">{{ result.name || "이름 미등록" }}</span>
-      <span v-if="result.affiliation" class="dim">{{ result.affiliation }}</span>
+      <span class="strip-item">현재 대기 <b>{{ status.waiting }}</b>팀</span>
+      <span v-if="status.called.length" class="strip-item">
+        호출 <b>{{ status.called.map((c) => c.num).join(", ") }}</b>번
+      </span>
     </div>
 
-    <template v-if="result.status === 'waiting'">
-      <div class="result-rank">
-        <span class="rank-num">{{ result.position }}</span>
-        <span class="rank-unit">번째</span>
+    <!-- 결과 (조회 성공) -->
+    <section v-if="result" class="panel card" :class="{ 'card-called': result.status === 'called' }">
+      <div class="team">
+        <span class="badge badge-muted">엔트리 {{ result.num }}</span>
+        <span class="team-name">{{ result.team || "팀 미등록" }}</span>
+        <span v-if="result.school" class="muted team-school">{{ result.school }}</span>
       </div>
-      <p class="result-note">
-        {{ aheadCount > 0 ? `앞에 ${aheadCount}팀이 기다리고 있습니다.` : "다음 차례입니다. 등록 데스크 근처에서 기다려 주세요." }}
+
+      <template v-if="result.status === 'waiting'">
+        <div class="rank">
+          <span class="rank-num">{{ result.position }}</span>
+          <span class="rank-unit">번째</span>
+        </div>
+        <p class="note">
+          {{ aheadCount > 0 ? `앞에 ${aheadCount}팀이 기다리고 있습니다.` : "다음 차례입니다. 등록 데스크 근처에서 기다려 주세요." }}
+        </p>
+      </template>
+
+      <template v-else>
+        <div class="rank called">
+          <AppIcon name="notice" />
+          <span>호출되었습니다</span>
+        </div>
+        <p class="note">지금 등록 데스크로 와주세요.</p>
+      </template>
+
+      <dl class="meta">
+        <div class="meta-item">
+          <dt>전체 대기</dt>
+          <dd>{{ result.waiting_total }}팀</dd>
+        </div>
+        <div class="meta-item">
+          <dt>{{ result.status === "called" ? "호출" : "대기 등록" }}</dt>
+          <dd>{{ formatDate(result.status === "called" ? result.called_at : result.registered_at) }}</dd>
+        </div>
+      </dl>
+
+      <div class="card-foot">
+        <span class="dim">15초마다 자동으로 갱신됩니다</span>
+        <button class="btn btn-ghost btn-sm" type="button" @click="resetLookup">다른 번호로 조회</button>
+      </div>
+    </section>
+
+    <!-- 조회 폼 -->
+    <section v-else class="panel card">
+      <h1 class="card-title">내 순서 조회</h1>
+      <p class="card-desc">대기 등록에 사용한 엔트리 번호와 전화번호를 입력해 주세요.</p>
+
+      <form class="form" @submit.prevent="doLookup()">
+        <div class="field">
+          <label class="field-label" for="lookup-num">엔트리 번호</label>
+          <input
+            id="lookup-num" v-model="form.num" class="input" type="text"
+            inputmode="numeric" autocomplete="off"
+          >
+        </div>
+        <div class="field">
+          <label class="field-label" for="lookup-phone">전화번호</label>
+          <input
+            id="lookup-phone" v-model="form.phone" class="input input-mono" type="tel"
+            placeholder="010-0000-0000" autocomplete="off"
+          >
+        </div>
+        <button class="btn btn-primary submit" type="submit" :disabled="busy">
+          <AppIcon name="search" /><span>조회</span>
+        </button>
+      </form>
+
+      <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+      <p v-else-if="notFound" class="muted found-none">
+        대기 중인 내역이 없습니다. 등록이 완료되었거나 취소된 경우입니다.
       </p>
-      <p class="dim">전체 대기 {{ result.waiting_total }}팀 · 등록 {{ formatDate(result.registered_at) }}</p>
-    </template>
-
-    <template v-else>
-      <div class="result-rank called-text">
-        <AppIcon name="notice" />
-        <span>호출되었습니다</span>
-      </div>
-      <p class="result-note">지금 등록 데스크로 와주세요.</p>
-      <p class="dim">호출 {{ formatDate(result.called_at) }}</p>
-    </template>
-  </section>
-
-  <section v-else-if="notFound" class="panel empty">
-    <AppIcon name="check" />
-    <div>대기 중인 내역이 없습니다. 등록이 완료되었거나 취소된 경우입니다.</div>
-  </section>
+    </section>
+  </div>
 </template>
 
 <style scoped>
-.overview {
+/* 공개 조회는 대부분 휴대폰에서 열린다 — 한 컬럼으로 좁게 잡고 가운데 정렬한다 */
+.lookup {
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.status-strip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md) var(--spacing-lg);
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
   margin-bottom: var(--spacing-md);
+  padding: 0 0.15rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
 }
 
-.overview-stat {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.overview-num {
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.strip-item b {
+  font-weight: 600;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
-.overview-label {
-  color: var(--text-secondary);
+.card {
+  padding: var(--spacing-lg);
+}
+
+.card-called {
+  border-color: var(--accent-primary);
+}
+
+.card-title {
+  font-size: 1.125rem;
+}
+
+.card-desc {
+  margin-top: 0.25rem;
   font-size: 0.875rem;
+  color: var(--text-secondary);
 }
 
-.overview-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4rem;
+/* ── 조회 폼 ─────────────────────────────────── */
+.form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-md);
 }
 
-.called-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.8125rem;
+.submit {
+  grid-column: 1 / -1;
+  padding: 0.6rem 1rem;
 }
 
-.field {
-  flex: 1 1 8rem;
-}
-
-.field.grow {
-  flex: 2 1 12rem;
-}
-
-.toolbar .btn {
-  flex: none;
-}
-
-.lookup-error {
-  padding: 0 var(--spacing-md) var(--spacing-md);
+.error {
+  margin-top: var(--spacing-sm);
   color: var(--accent-danger);
   font-size: 0.8125rem;
 }
 
-.result {
-  margin-top: var(--spacing-md);
-  padding: var(--spacing-xl) var(--spacing-lg);
-  text-align: center;
+.found-none {
+  margin-top: var(--spacing-sm);
+  font-size: 0.8125rem;
 }
 
-.result-called {
-  border-color: var(--accent-primary);
-}
-
-.result-team {
+/* ── 결과 ────────────────────────────────────── */
+.team {
   display: flex;
   align-items: center;
-  justify-content: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: var(--spacing-md);
+  gap: 0.4rem 0.5rem;
 }
 
 .team-name {
+  font-size: 1rem;
   font-weight: 600;
 }
 
-.result-rank {
+.team-school {
+  font-size: 0.875rem;
+}
+
+.rank {
   display: flex;
   align-items: baseline;
-  justify-content: center;
   gap: 0.3rem;
+  margin: var(--spacing-md) 0 0;
 }
 
 .rank-num {
-  font-size: 4rem;
+  font-size: 3.5rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -259,35 +269,64 @@ onUnmounted(() => clearInterval(timer));
 }
 
 .rank-unit {
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   color: var(--text-secondary);
 }
 
-.called-text {
-  display: flex;
+.rank.called {
   align-items: center;
-  gap: 0.5rem;
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--accent-primary);
 }
 
-.called-text .icon {
-  width: 28px;
-  height: 28px;
+.rank.called .icon {
+  width: 26px;
+  height: 26px;
 }
 
-.result-note {
-  margin-top: var(--spacing-sm);
-  font-size: 1rem;
+.note {
+  margin-top: 0.35rem;
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
 }
 
-.result .dim {
-  margin-top: var(--spacing-xs);
-  font-size: 0.8125rem;
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md) var(--spacing-xl);
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
 }
 
-.empty {
+.meta-item dt {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.meta-item dd {
+  margin-top: 0.1rem;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
+}
+
+.card-foot .dim {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 420px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

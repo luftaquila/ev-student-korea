@@ -13,18 +13,36 @@ const PORT = 9300;
 // 대기 상태 전이: waiting → called → done. 취소는 waiting/called 어디서든 가능하다.
 const ACTIVE_STATUSES = ["waiting", "called"];
 
+// 안내 문자 앞머리. 대회가 하나뿐이라 설정으로 두지 않고 고정한다.
+const SMS_PREFIX = "[EV]";
+
 export function createQueueApp(options = {}) {
 
 const db = createDatabase(Database, options.dbPath || "./data/queue.db");
 
 db.transaction(() => {
   // 엔트리 목록 (관리자가 등록). 대기 등록은 여기 있는 번호만 받는다.
+  // 엔트리 한 건은 "번호 · 학교 · 팀"으로 식별한다.
   db.exec(`CREATE TABLE IF NOT EXISTS entries (
     num INTEGER PRIMARY KEY CHECK(num > 0),
-    name TEXT NOT NULL,
-    affiliation TEXT NOT NULL DEFAULT '',
+    school TEXT NOT NULL DEFAULT '',
+    team TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )`);
+
+  // 마이그레이션: 초기 스키마(name=팀명 / affiliation=소속)를 school·team으로 바꾼다.
+  if (db.prepare("PRAGMA table_info(entries)").all().some((c) => c.name === "name")) {
+    db.exec(`CREATE TABLE entries_new (
+      num INTEGER PRIMARY KEY CHECK(num > 0),
+      school TEXT NOT NULL DEFAULT '',
+      team TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    )`);
+    db.exec(`INSERT INTO entries_new (num, school, team, created_at)
+      SELECT num, COALESCE(affiliation, ''), name, created_at FROM entries`);
+    db.exec("DROP TABLE entries");
+    db.exec("ALTER TABLE entries_new RENAME TO entries");
+  }
 
   // 등록 대기열. 순번은 별도 컬럼 없이 id 오름차순(FIFO)으로 계산한다.
   db.exec(`CREATE TABLE IF NOT EXISTS queue (
@@ -51,11 +69,12 @@ db.transaction(() => {
     ["open", "true"],          // 대기 접수 열림
     ["sms", "true"],           // SMS 알림 발송 (credential 미설정이면 무시된다)
     ["notify_rank", "3"],      // 대기 N번째가 되면 사전 안내 문자 (0 = 사용 안 함)
-    ["event_name", "EV Student Korea"], // 안내 문자 앞머리 [이름]
   ];
   for (const [k, v] of defaults) {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run(k, v);
   }
+  // 문자 앞머리는 SMS_PREFIX로 고정됐다 — 초기 버전의 설정 행을 정리한다.
+  db.prepare("DELETE FROM settings WHERE key = 'event_name'").run();
 })();
 
 const logger = createLogger(db, "queue");
@@ -197,7 +216,7 @@ function notifyUpcoming() {
       continue;
     }
     dispatchSms("advance", row.num, row.phone,
-      `[${getSetting("event_name")}] 엔트리 ${row.num}번 대기 ${i + 1}번째입니다. 등록 데스크 근처에서 기다려 주세요.`);
+      `${SMS_PREFIX} 엔트리 ${row.num}번 대기 ${i + 1}번째입니다. 등록 데스크 근처에서 기다려 주세요.`);
   }
 }
 
@@ -243,7 +262,7 @@ app.post("/api/lookup", rateLimit, (req, res) => {
   if (!num || !phone) return res.status(400).send("엔트리 번호와 전화번호를 확인해 주세요.");
 
   const reg = db.prepare(`
-    SELECT q.id, q.num, q.status, q.registered_at, q.called_at, e.name, e.affiliation
+    SELECT q.id, q.num, q.status, q.registered_at, q.called_at, e.school, e.team
     FROM queue q LEFT JOIN entries e ON e.num = q.num
     WHERE q.num = ? AND q.phone = ? AND q.status IN ('waiting','called')
   `).get(num, phone);
@@ -256,8 +275,8 @@ app.post("/api/lookup", rateLimit, (req, res) => {
 
   res.json({
     num: reg.num,
-    name: reg.name,
-    affiliation: reg.affiliation,
+    school: reg.school,
+    team: reg.team,
     status: reg.status,
     position,
     waiting_total: waitingTotal,
@@ -273,13 +292,13 @@ app.post("/api/lookup", rateLimit, (req, res) => {
 // GET /api/queue - 운영 보드 (대기·호출 목록 + 오늘 처리 현황 + 설정)
 app.get("/api/queue", (req, res) => {
   const waiting = db.prepare(`
-    SELECT q.id, q.num, q.phone, q.registered_at, q.notified, e.name, e.affiliation
+    SELECT q.id, q.num, q.phone, q.registered_at, q.notified, e.school, e.team
     FROM queue q LEFT JOIN entries e ON e.num = q.num
     WHERE q.status = 'waiting' ORDER BY q.id
   `).all().map((row, i) => ({ ...row, position: i + 1 }));
 
   const called = db.prepare(`
-    SELECT q.id, q.num, q.phone, q.called_at, e.name, e.affiliation
+    SELECT q.id, q.num, q.phone, q.called_at, e.school, e.team
     FROM queue q LEFT JOIN entries e ON e.num = q.num
     WHERE q.status = 'called' ORDER BY q.called_at
   `).all();
@@ -313,7 +332,7 @@ app.post("/api/queue", (req, res) => {
     return res.status(403).send("지금은 대기 접수를 받지 않습니다.");
   }
 
-  const entry = db.prepare("SELECT num, name FROM entries WHERE num = ?").get(num);
+  const entry = db.prepare("SELECT num, school, team FROM entries WHERE num = ?").get(num);
   if (!entry) {
     logger.warn(req, "queue.register", { reason: "unknown_entry", num }, `#${num}`);
     return res.status(400).send("등록되지 않은 엔트리 번호입니다.");
@@ -323,7 +342,7 @@ app.post("/api/queue", (req, res) => {
     "SELECT id, status FROM queue WHERE num = ? AND status IN ('waiting','called')",
   ).get(num);
   if (active) {
-    logger.warn(req, "queue.register", { reason: "duplicate", num, name: entry.name, existing_status: active.status }, `#${num}`);
+    logger.warn(req, "queue.register", { reason: "duplicate", num, school: entry.school, team: entry.team, existing_status: active.status }, `#${num}`);
     return res.status(409).send(active.status === "called"
       ? "이미 호출된 엔트리입니다. 등록 데스크로 와주세요."
       : "이미 대기 중인 엔트리입니다.");
@@ -331,7 +350,7 @@ app.post("/api/queue", (req, res) => {
 
   const result = dbRun(() => db.prepare("INSERT INTO queue (num, phone) VALUES (?, ?)").run(num, phone));
   if (!result.success) {
-    logger.warn(req, "queue.register", { error: result.error, num, name: entry.name }, `#${num}`);
+    logger.warn(req, "queue.register", { error: result.error, num, school: entry.school, team: entry.team }, `#${num}`);
     return res.status(result.status).send(result.error);
   }
 
@@ -340,16 +359,23 @@ app.post("/api/queue", (req, res) => {
   ).get(result.result.lastInsertRowid).cnt;
   const waitingTotal = db.prepare("SELECT COUNT(*) AS cnt FROM queue WHERE status = 'waiting'").get().cnt;
 
-  logger.log(req, "queue.register", { num, name: entry.name, phone, position }, `#${num}`);
+  logger.log(req, "queue.register", { num, school: entry.school, team: entry.team, phone, position }, `#${num}`);
   notifyUpcoming();
 
-  res.status(201).json({ id: result.result.lastInsertRowid, num, name: entry.name, position, waiting_total: waitingTotal });
+  res.status(201).json({
+    id: result.result.lastInsertRowid,
+    num,
+    school: entry.school,
+    team: entry.team,
+    position,
+    waiting_total: waitingTotal,
+  });
 });
 
 // 상태 전이 헬퍼. 전이 규칙에 맞지 않으면 409.
 function transition(req, res, id, from, to, timestampCol, action, onSuccess) {
   const reg = db.prepare(`
-    SELECT q.id, q.num, q.phone, q.status, e.name
+    SELECT q.id, q.num, q.phone, q.status, e.school, e.team
     FROM queue q LEFT JOIN entries e ON e.num = q.num WHERE q.id = ?
   `).get(Number(id));
   if (!reg) return res.status(404).send("대기 내역을 찾을 수 없습니다.");
@@ -366,7 +392,7 @@ function transition(req, res, id, from, to, timestampCol, action, onSuccess) {
     return res.status(result.status).send(result.error);
   }
 
-  logger.log(req, action, { num: reg.num, name: reg.name }, `#${reg.num}`);
+  logger.log(req, action, { num: reg.num, school: reg.school, team: reg.team }, `#${reg.num}`);
   if (onSuccess) onSuccess(reg);
   notifyUpcoming();
   res.status(200).send();
@@ -377,7 +403,7 @@ app.post("/api/queue/:id/call", (req, res) => {
   transition(req, res, req.params.id, ["waiting"], "called", "called_at", "queue.call", (reg) => {
     if (smsEnabled()) {
       dispatchSms("call", reg.num, reg.phone,
-        `[${getSetting("event_name")}] 엔트리 ${reg.num}번 차례입니다. 지금 등록 데스크로 와주세요.`);
+        `${SMS_PREFIX} 엔트리 ${reg.num}번 차례입니다. 지금 등록 데스크로 와주세요.`);
     }
   });
 });
@@ -400,7 +426,7 @@ function currentSettings() {
     open: getSetting("open") === "true",
     sms: getSetting("sms") === "true",
     notify_rank: Number.parseInt(getSetting("notify_rank"), 10) || 0,
-    event_name: getSetting("event_name"),
+    sms_prefix: SMS_PREFIX,
     sms_available: smsAvailable,
   };
 }
@@ -409,7 +435,7 @@ app.get("/api/settings", (req, res) => res.json(currentSettings()));
 
 // PATCH /api/settings - 부분 갱신. 값 검증에 실패하면 아무것도 바꾸지 않는다.
 app.patch("/api/settings", (req, res) => {
-  const { open, sms, notify_rank, event_name } = req.body;
+  const { open, sms, notify_rank } = req.body;
   const changes = {};
 
   if (open !== undefined) {
@@ -426,12 +452,6 @@ app.patch("/api/settings", (req, res) => {
       return res.status(400).send("사전 안내 순번은 0~20 사이여야 합니다. (0 = 사용 안 함)");
     }
     changes.notify_rank = String(rank);
-  }
-  if (event_name !== undefined) {
-    const name = String(event_name).trim();
-    // 안내 문자 앞머리에 그대로 들어가므로 SMS 90바이트 한도를 위해 길이를 제한한다
-    if (!name || name.length > 30) return res.status(400).send("대회명은 1~30자여야 합니다.");
-    changes.event_name = name;
   }
   if (Object.keys(changes).length === 0) return res.status(400).send("변경할 설정이 없습니다.");
 
@@ -456,7 +476,7 @@ app.patch("/api/settings", (req, res) => {
 // GET /api/entries - 전체 목록 (+ 현재 대기 상태)
 app.get("/api/entries", (req, res) => {
   const result = dbRun(() => db.prepare(`
-    SELECT e.num, e.name, e.affiliation, e.created_at,
+    SELECT e.num, e.school, e.team, e.created_at,
       (SELECT status FROM queue q WHERE q.num = e.num AND q.status IN ('waiting','called')) AS queue_status
     FROM entries e ORDER BY e.num
   `).all());
@@ -469,7 +489,7 @@ app.get("/api/entries/:num", (req, res) => {
   const num = parseEntryNum(req.params.num);
   if (!num) return res.status(400).send("올바르지 않은 엔트리 번호입니다.");
   const entry = db.prepare(`
-    SELECT e.num, e.name, e.affiliation,
+    SELECT e.num, e.school, e.team,
       (SELECT status FROM queue q WHERE q.num = e.num AND q.status IN ('waiting','called')) AS queue_status
     FROM entries e WHERE e.num = ?
   `).get(num);
@@ -481,24 +501,24 @@ app.get("/api/entries/:num", (req, res) => {
 app.post("/api/entries", (req, res) => {
   const num = parseEntryNum(req.body.num);
   if (!num) return res.status(400).send("엔트리 번호는 1~9999 사이의 숫자여야 합니다.");
-  const name = String(req.body.name || "").trim();
-  if (!name) return res.status(400).send("팀명을 입력하세요.");
-  const affiliation = String(req.body.affiliation || "").trim();
+  const team = String(req.body.team || "").trim();
+  if (!team) return res.status(400).send("팀을 입력하세요.");
+  const school = String(req.body.school || "").trim();
 
   const result = dbRun(() => db.prepare(
-    "INSERT INTO entries (num, name, affiliation) VALUES (?, ?, ?)",
-  ).run(num, name, affiliation));
+    "INSERT INTO entries (num, school, team) VALUES (?, ?, ?)",
+  ).run(num, school, team));
   if (!result.success) {
     if (result.error.includes("이미 존재")) {
-      logger.warn(req, "entry.create", { error: "duplicate", num, name }, `#${num}`);
+      logger.warn(req, "entry.create", { error: "duplicate", num, school, team }, `#${num}`);
       return res.status(400).send("이미 등록된 엔트리 번호입니다.");
     }
-    logger.warn(req, "entry.create", { error: result.error, num, name }, `#${num}`);
+    logger.warn(req, "entry.create", { error: result.error, num, school, team }, `#${num}`);
     return res.status(result.status).send(result.error);
   }
 
-  logger.log(req, "entry.create", { num, name, affiliation }, `#${num}`);
-  res.status(201).json({ num, name, affiliation });
+  logger.log(req, "entry.create", { num, school, team }, `#${num}`);
+  res.status(201).json({ num, school, team });
 });
 
 // POST /api/entries/bulk - 일괄 추가 (붙여넣기 입력)
@@ -506,7 +526,7 @@ app.post("/api/entries/bulk", (req, res) => {
   const { entries: rows } = req.body;
   if (!Array.isArray(rows) || rows.length === 0) return res.status(400).send("추가할 엔트리 목록이 비어있습니다.");
 
-  const insert = db.prepare("INSERT OR IGNORE INTO entries (num, name, affiliation) VALUES (?, ?, ?)");
+  const insert = db.prepare("INSERT OR IGNORE INTO entries (num, school, team) VALUES (?, ?, ?)");
   const added = [];
   const skipped = [];
   const errors = [];
@@ -515,10 +535,10 @@ app.post("/api/entries/bulk", (req, res) => {
     for (const row of rows) {
       const num = parseEntryNum(row.num);
       if (!num) { errors.push({ row, reason: "올바르지 않은 엔트리 번호" }); continue; }
-      const name = String(row.name || "").trim();
-      if (!name) { errors.push({ row, reason: "팀명 없음" }); continue; }
+      const team = String(row.team || "").trim();
+      if (!team) { errors.push({ row, reason: "팀 없음" }); continue; }
 
-      const result = insert.run(num, name, String(row.affiliation || "").trim());
+      const result = insert.run(num, String(row.school || "").trim(), team);
       if (result.changes > 0) added.push(num);
       else skipped.push(num);
     }
@@ -565,26 +585,26 @@ app.delete("/api/entries/bulk", (req, res) => {
   res.json({ deleted: txResult.result.deleted.length, busy: txResult.result.busy });
 });
 
-// PATCH /api/entries/:num - 팀명·소속 수정
+// PATCH /api/entries/:num - 학교·팀 수정
 app.patch("/api/entries/:num", (req, res) => {
   const num = parseEntryNum(req.params.num);
   if (!num) return res.status(400).send("올바르지 않은 엔트리 번호입니다.");
   const entry = db.prepare("SELECT * FROM entries WHERE num = ?").get(num);
   if (!entry) return res.status(404).send("엔트리를 찾을 수 없습니다.");
 
-  const { name, affiliation } = req.body;
+  const { school, team } = req.body;
   const changes = {};
-  if (name !== undefined) {
-    const trimmed = String(name).trim();
-    if (!trimmed) return res.status(400).send("팀명은 비울 수 없습니다.");
-    changes.name = trimmed;
+  if (team !== undefined) {
+    const trimmed = String(team).trim();
+    if (!trimmed) return res.status(400).send("팀은 비울 수 없습니다.");
+    changes.team = trimmed;
   }
-  if (affiliation !== undefined) changes.affiliation = String(affiliation).trim();
+  if (school !== undefined) changes.school = String(school).trim();
   if (Object.keys(changes).length === 0) return res.status(400).send("변경할 내용이 없습니다.");
 
   const result = dbRun(() => db.transaction(() => {
-    if (changes.name !== undefined) db.prepare("UPDATE entries SET name = ? WHERE num = ?").run(changes.name, num);
-    if (changes.affiliation !== undefined) db.prepare("UPDATE entries SET affiliation = ? WHERE num = ?").run(changes.affiliation, num);
+    if (changes.team !== undefined) db.prepare("UPDATE entries SET team = ? WHERE num = ?").run(changes.team, num);
+    if (changes.school !== undefined) db.prepare("UPDATE entries SET school = ? WHERE num = ?").run(changes.school, num);
   })());
   if (!result.success) {
     logger.warn(req, "entry.update", { error: result.error, changes }, `#${num}`);
@@ -606,17 +626,17 @@ app.delete("/api/entries/:num", (req, res) => {
     "SELECT status FROM queue WHERE num = ? AND status IN ('waiting','called')",
   ).get(num);
   if (active) {
-    logger.warn(req, "entry.delete", { reason: "active_registration", status: active.status, name: entry.name }, `#${num}`);
+    logger.warn(req, "entry.delete", { reason: "active_registration", status: active.status, school: entry.school, team: entry.team }, `#${num}`);
     return res.status(409).send("대기 중인 엔트리는 삭제할 수 없습니다. 먼저 대기를 취소하세요.");
   }
 
   const result = dbRun(() => db.prepare("DELETE FROM entries WHERE num = ?").run(num));
   if (!result.success) {
-    logger.warn(req, "entry.delete", { error: result.error, name: entry.name }, `#${num}`);
+    logger.warn(req, "entry.delete", { error: result.error, school: entry.school, team: entry.team }, `#${num}`);
     return res.status(result.status).send(result.error);
   }
 
-  logger.log(req, "entry.delete", { name: entry.name, affiliation: entry.affiliation }, `#${num}`);
+  logger.log(req, "entry.delete", { school: entry.school, team: entry.team }, `#${num}`);
   res.status(200).send();
 });
 

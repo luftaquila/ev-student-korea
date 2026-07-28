@@ -150,14 +150,30 @@
 }
 
 @media (max-width: 768px) {
+  /* 좁은 화면에서는 브랜드와 계정 칩 사이에 남는 폭이 없어 탭이 0폭으로 찌그러진다
+     (flex:none 형제 + min-width:0). 탭을 헤더 두 번째 줄로 내려 전체 폭을 쓰게 하고,
+     넘치면 가로 스크롤한다 — 헤더 높이는 내용에 맞춰 늘어난다. */
+  /* 탭이 없는 화면(랜딩·공개 조회)은 기존 한 줄 높이를 그대로 유지한다 */
+  .app-header {
+    height: auto;
+    min-height: var(--header-height);
+  }
+
   .header-inner {
-    padding: 0 var(--spacing-md);
-    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.6rem var(--spacing-md);
+    gap: 0.5rem 0.6rem;
   }
 
   .brand-divider,
   .brand-sub {
     display: none;
+  }
+
+  .nav-tabs {
+    order: 1;
+    flex: 1 0 100%;
+    margin-left: 0;
   }
 
   .main {

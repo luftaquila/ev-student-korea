@@ -26,13 +26,15 @@ Traefik (TLS, Host(${DOMAIN_NAME})) → Caddy :9000 ─┬─ handle_path /auth/
 학회 등록 줄 대체 서비스. formula-student-korea의 검차 대기열을 단순화한 구조로, 부스·우선순위·
 재검 같은 개념 없이 단일 FIFO 대기열 하나만 운영한다.
 
-- 흐름: 학생이 태블릿(`/register`, official 세션)에서 **엔트리 번호+전화번호**로 등록 →
-  대기 N번째 진입 시 사전 안내 SMS → 오피셜이 `/manage`에서 호출(호출 SMS 발송) → 완료/취소.
-- 공개 페이지 `/`: 엔트리 번호+전화번호 쌍으로 자기 순번·전체 대기 인원 조회 (rate limit 30/min/IP).
-- 엔트리 목록은 admin이 `/entries`에서 관리한다(`shared/nav-config.js`의 adminMenu에 등록됨).
-  대기 등록은 엔트리 테이블에 있는 번호만 허용된다.
+- 흐름: 학생이 태블릿(`/register`, official 세션)에서 **엔트리 번호+전화번호**를 한 화면에서
+  입력(번호를 넣으면 즉시 학교·팀을 표시해 오입력을 막는다) → 대기 N번째 진입 시 사전 안내 SMS
+  → 오피셜이 `/manage`에서 호출(호출 SMS 발송) → 완료/취소.
+- 공개 페이지 `/`: 엔트리 번호+전화번호 쌍으로 자기 순번·전체 대기 인원 조회 (rate limit 60/min/IP).
+- **엔트리는 `번호 · 학교 · 팀`으로 구성**된다(entries 테이블 `num`/`school`/`team`, 학교는 생략
+  가능). admin이 `/entries`에서 관리한다(`shared/nav-config.js`의 adminMenu에 등록됨). 대기
+  등록은 엔트리 테이블에 있는 번호만 허용된다.
 - 설정(settings 테이블, `/manage`에서 변경): `open`(접수), `sms`(알림), `notify_rank`(사전 안내
-  순번, 0=끔), `event_name`(문자 앞머리).
+  순번, 0=끔). 문자 앞머리는 `SMS_PREFIX = "[EV]"`로 코드에 고정이다(설정 아님).
 - SMS는 Naver Cloud SENS. credential은 env 4종(`NAVER_CLOUD_ACCESS_KEY` ·
   `NAVER_CLOUD_SECRET_KEY` · `NAVER_CLOUD_SMS_SERVICE_ID` · `PHONE_NUMBER_SMS_SENDER`)이며
   **FSK와 동일한 값**을 쓴다(FSK는 email 서비스 DB에 보관, EV는 env로 직접 주입). 하나라도

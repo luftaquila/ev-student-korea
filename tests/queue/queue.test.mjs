@@ -1,4 +1,5 @@
 import { describe, it, before, after, beforeEach } from "node:test";
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import {
   TEST_INTERNAL_SECRET, tmpDbPath, makeAuthCookie, createClient,
@@ -48,8 +49,8 @@ describe("queue service", () => {
     sentSms.length = 0;
   }
 
-  function addEntry(num, name = `팀${num}`, affiliation = "OO대") {
-    db.prepare("INSERT INTO entries (num, name, affiliation) VALUES (?, ?, ?)").run(num, name, affiliation);
+  function addEntry(num, team = `팀${num}`, school = "OO대학교") {
+    db.prepare("INSERT INTO entries (num, school, team) VALUES (?, ?, ?)").run(num, school, team);
   }
 
   const register = (num, phone = `0101234${String(num).padStart(4, "0")}`) =>
@@ -85,7 +86,8 @@ describe("queue service", () => {
       assert.equal(res.status, 200);
       const body = await res.json();
       assert.equal(body.num, 7);
-      assert.equal(body.name, "팀7");
+      assert.equal(body.team, "팀7");
+      assert.equal(body.school, "OO대학교");
       assert.equal(body.status, "waiting");
       assert.equal(body.position, 1);
       assert.equal(body.waiting_total, 1);
@@ -115,16 +117,19 @@ describe("queue service", () => {
     it("엔트리 관리는 official에게 403", async () => {
       const res = await client.get("/api/entries", { cookie: officialCookie });
       assert.equal(res.status, 403);
-      const post = await client.post("/api/entries", { cookie: officialCookie, body: { num: 1, name: "x" } });
+      const post = await client.post("/api/entries", { cookie: officialCookie, body: { num: 1, team: "x" } });
       assert.equal(post.status, 403);
     });
 
     it("엔트리 단건 조회는 official에게 열려 있다 (태블릿 확인용)", async () => {
       resetQueue();
-      addEntry(11, "확인팀");
+      addEntry(11, "확인팀", "확인대학교");
       const res = await client.get("/api/entries/11", { cookie: officialCookie });
       assert.equal(res.status, 200);
-      assert.equal((await res.json()).name, "확인팀");
+      const body = await res.json();
+      assert.equal(body.team, "확인팀");
+      assert.equal(body.school, "확인대학교");
+      assert.equal(body.queue_status, null);
     });
 
     it("설정은 official이 변경할 수 있다", async () => {
@@ -155,7 +160,8 @@ describe("queue service", () => {
       assert.equal(first.status, 201);
       const firstBody = await first.json();
       assert.equal(firstBody.position, 1);
-      assert.equal(firstBody.name, "팀1");
+      assert.equal(firstBody.team, "팀1");
+      assert.equal(firstBody.school, "OO대학교");
 
       const second = await register(2);
       const secondBody = await second.json();
@@ -311,27 +317,27 @@ describe("queue service", () => {
       assert.equal(body.open, true);
       assert.equal(body.sms, true);
       assert.equal(body.notify_rank, 3);
-      assert.equal(body.event_name, "EV Student Korea");
+      assert.equal(body.sms_prefix, "[EV]");
       assert.equal(body.sms_available, true); // 테스트는 sendSms 주입으로 항상 가용
     });
 
     it("잘못된 값은 400", async () => {
       const rank = await client.patch("/api/settings", { cookie: officialCookie, body: { notify_rank: 99 } });
       assert.equal(rank.status, 400);
-      const name = await client.patch("/api/settings", { cookie: officialCookie, body: { event_name: "" } });
-      assert.equal(name.status, 400);
       const open = await client.patch("/api/settings", { cookie: officialCookie, body: { open: "yes" } });
       assert.equal(open.status, 400);
       const empty = await client.patch("/api/settings", { cookie: officialCookie, body: {} });
       assert.equal(empty.status, 400);
     });
 
-    it("대회명은 안내 문자에 반영된다", async () => {
-      await client.patch("/api/settings", { cookie: officialCookie, body: { event_name: "EV 2026" } });
+    it("문자 앞머리는 [EV]로 고정이며 설정으로 바꿀 수 없다", async () => {
+      const res = await client.patch("/api/settings", { cookie: officialCookie, body: { event_name: "EV 2026" } });
+      assert.equal(res.status, 400, "event_name만 담긴 요청은 변경할 설정이 없다");
+
       addEntry(1);
       const reg = await (await register(1)).json();
       await client.post(`/api/queue/${reg.id}/call`, { cookie: officialCookie });
-      assert.ok(sentSms.some((s) => s.content.startsWith("[EV 2026]")));
+      assert.ok(sentSms.every((s) => s.content.startsWith("[EV] ")));
     });
   });
 
@@ -340,25 +346,33 @@ describe("queue service", () => {
 
     it("추가·수정·삭제", async () => {
       const created = await client.post("/api/entries", {
-        cookie: adminCookie, body: { num: 10, name: "새팀", affiliation: "XX대" },
+        cookie: adminCookie, body: { num: 10, school: "XX대학교", team: "새팀" },
       });
       assert.equal(created.status, 201);
+      assert.deepEqual(await created.json(), { num: 10, school: "XX대학교", team: "새팀" });
 
-      const dup = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, name: "중복" } });
+      const dup = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, team: "중복" } });
       assert.equal(dup.status, 400);
 
-      const patched = await client.patch("/api/entries/10", { cookie: adminCookie, body: { name: "바뀐팀" } });
+      const patched = await client.patch("/api/entries/10", {
+        cookie: adminCookie, body: { team: "바뀐팀", school: "YY대학교" },
+      });
       assert.equal(patched.status, 200);
-      assert.equal(db.prepare("SELECT name FROM entries WHERE num = 10").get().name, "바뀐팀");
+      const row = db.prepare("SELECT school, team FROM entries WHERE num = 10").get();
+      assert.deepEqual(row, { school: "YY대학교", team: "바뀐팀" });
 
       const deleted = await client.delete("/api/entries/10", { cookie: adminCookie });
       assert.equal(deleted.status, 200);
       assert.equal(db.prepare("SELECT 1 FROM entries WHERE num = 10").get(), undefined);
     });
 
-    it("팀명 없이 추가할 수 없다", async () => {
-      const res = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, name: "  " } });
-      assert.equal(res.status, 400);
+    it("팀 없이 추가할 수 없다 (학교는 생략 가능)", async () => {
+      const noTeam = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, team: "  " } });
+      assert.equal(noTeam.status, 400);
+
+      const noSchool = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, team: "학교없는팀" } });
+      assert.equal(noSchool.status, 201);
+      assert.equal(db.prepare("SELECT school FROM entries WHERE num = 10").get().school, "");
     });
 
     it("대기 중인 엔트리는 삭제가 거부된다", async () => {
@@ -373,10 +387,10 @@ describe("queue service", () => {
       const res = await client.post("/api/entries/bulk", {
         cookie: adminCookie,
         body: { entries: [
-          { num: 1, name: "중복팀" },
-          { num: 2, name: "새팀", affiliation: "YY대" },
-          { num: "bad", name: "형식오류" },
-          { num: 3, name: "" },
+          { num: 1, school: "덮어쓰기시도", team: "중복팀" },
+          { num: 2, school: "YY대학교", team: "새팀" },
+          { num: "bad", team: "형식오류" },
+          { num: 3, team: "" },
         ] },
       });
       assert.equal(res.status, 200);
@@ -384,7 +398,11 @@ describe("queue service", () => {
       assert.equal(body.added, 1);
       assert.equal(body.skipped, 1);
       assert.equal(body.errors.length, 2);
-      assert.equal(db.prepare("SELECT name FROM entries WHERE num = 1").get().name, "기존팀");
+      assert.equal(db.prepare("SELECT team FROM entries WHERE num = 1").get().team, "기존팀");
+      assert.deepEqual(
+        db.prepare("SELECT school, team FROM entries WHERE num = 2").get(),
+        { school: "YY대학교", team: "새팀" },
+      );
     });
 
     it("일괄 삭제는 대기 중인 엔트리를 건너뛴다", async () => {
@@ -404,5 +422,43 @@ describe("queue service", () => {
       assert.equal(body.find((e) => e.num === 1).queue_status, "waiting");
       assert.equal(body.find((e) => e.num === 2).queue_status, null);
     });
+  });
+});
+
+// 초기 버전(name=팀명 / affiliation=소속 · event_name 설정)으로 만들어진 DB를 열었을 때
+// school·team으로 옮겨지는지 검증한다. 프로덕션 DB가 이 경로를 탄다.
+describe("queue service 마이그레이션", () => {
+  let dbPath;
+
+  after(() => cleanup(dbPath));
+
+  it("name·affiliation을 team·school로 옮기고 event_name 설정을 지운다", () => {
+    dbPath = tmpDbPath();
+    // better-sqlite3는 queue/node_modules에만 있다 — 서비스와 같은 위치에서 해석한다.
+    const Database = createRequire(new URL("../../queue/index.mjs", import.meta.url))("better-sqlite3");
+
+    // 초기 스키마 재현
+    const legacy = new Database(dbPath);
+    legacy.exec(`CREATE TABLE entries (
+      num INTEGER PRIMARY KEY CHECK(num > 0),
+      name TEXT NOT NULL,
+      affiliation TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    )`);
+    legacy.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    legacy.prepare("INSERT INTO entries (num, name, affiliation) VALUES (?, ?, ?)").run(3, "옛날팀", "옛날대학교");
+    legacy.prepare("INSERT INTO settings (key, value) VALUES ('event_name', 'EV Student Korea')").run();
+    legacy.close();
+
+    const { db } = createQueueApp({ dbPath });
+    try {
+      assert.deepEqual(
+        db.prepare("SELECT num, school, team FROM entries").all(),
+        [{ num: 3, school: "옛날대학교", team: "옛날팀" }],
+      );
+      assert.equal(db.prepare("SELECT 1 FROM settings WHERE key = 'event_name'").get(), undefined);
+    } finally {
+      db.close();
+    }
   });
 });
