@@ -174,13 +174,26 @@ onUnmounted(() => {
     <form v-else class="panel card" @submit.prevent="submit">
       <h1 class="card-title">등록 대기 신청</h1>
 
-      <!-- 번호와 그 확인 결과는 한 덩어리다 — 결과가 입력 바로 아래 붙어야 읽힌다 -->
-      <div class="num-group">
-        <div class="field">
+      <!-- 번호와 전화번호는 태블릿에서 한눈에 입력하도록 같은 행에 둔다.
+           학교·팀 확인 결과는 두 입력 아래 전체 폭을 사용한다. -->
+      <div class="registration-fields">
+        <div class="field entry-number-field">
           <label class="field-label" for="reg-num">엔트리 번호</label>
           <input
             id="reg-num" v-model="num" class="input big-input" type="text"
-            inputmode="numeric" maxlength="4" autocomplete="off" autofocus
+            inputmode="numeric" maxlength="3" autocomplete="off" autofocus
+          >
+        </div>
+
+        <div class="field phone-field">
+          <label class="field-label" for="reg-phone">전화번호</label>
+          <!-- 입력 중 하이픈을 자동으로 넣는다(formatPhone). v-model이면 커서가 튀므로
+               :value + @input으로 제어한다. maxlength는 "010-1234-5678" 13자 기준. -->
+          <input
+            id="reg-phone" class="input big-input input-mono" type="tel"
+            inputmode="numeric" maxlength="13"
+            placeholder="010-0000-0000" autocomplete="off"
+            :value="phone" @input="onPhoneInput"
           >
         </div>
 
@@ -196,18 +209,6 @@ onUnmounted(() => {
         </div>
         <p v-else-if="checking" class="entry-hint dim">확인 중…</p>
         <p v-else-if="entryError" class="entry-hint error">{{ entryError }}</p>
-      </div>
-
-      <div class="field">
-        <label class="field-label" for="reg-phone">전화번호</label>
-        <!-- 입력 중 하이픈을 자동으로 넣는다(formatPhone). v-model이면 커서가 튀므로
-             :value + @input으로 제어한다. maxlength는 "010-1234-5678" 13자 기준. -->
-        <input
-          id="reg-phone" class="input big-input input-mono" type="tel"
-          inputmode="numeric" maxlength="13"
-          placeholder="010-0000-0000" autocomplete="off"
-          :value="phone" @input="onPhoneInput"
-        >
       </div>
 
       <!-- 개인정보 수집·이용 동의. 태블릿에서 누르기 쉽도록 영역 전체가 버튼이다. -->
@@ -273,10 +274,20 @@ onUnmounted(() => {
   gap: 0.4rem;
 }
 
-.num-group {
-  display: flex;
-  flex-direction: column;
+.registration-fields {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
   gap: 0.45rem;
+}
+
+.entry-number-field,
+.phone-field {
+  min-width: 0;
+}
+
+.registration-fields .entry-found,
+.registration-fields .entry-hint {
+  grid-column: 1 / -1;
 }
 
 .big-input {
