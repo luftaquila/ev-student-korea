@@ -17,7 +17,7 @@ delete process.env.TEST_SERVER;
 const { createAuthApp } = await import("../../auth/index.mjs");
 
 describe("auth service", () => {
-  let server, client, db, dbPath;
+  let server, baseUrl, client, db, dbPath;
   let adminCookie, officialCookie;
 
   before(async () => {
@@ -26,7 +26,8 @@ describe("auth service", () => {
     db = created.db;
     const started = await startServer(created.app);
     server = started.server;
-    client = createClient(started.baseUrl);
+    baseUrl = started.baseUrl;
+    client = createClient(baseUrl);
 
     // 세션 쿠키는 DB에 살아 있는 계정에만 유효하다(auth의 validateUser가 자기 DB를 조회).
     db.prepare("INSERT INTO users (email, name, role) VALUES (?, ?, 'official')").run("off@ev.test", "오피셜");
@@ -93,6 +94,31 @@ describe("auth service", () => {
     it("대소문자를 바꿔도 게이트를 우회할 수 없다", async () => {
       const res = await client.get("/API/users", { cookie: officialCookie });
       assert.equal(res.status, 403);
+    });
+
+    it("같은 site의 다른 origin에서 온 쿠키 인증 쓰기 요청을 거부한다", async () => {
+      const res = await fetch(`${baseUrl}/api/users`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          Origin: "https://evil.luftaquila.io",
+          "Sec-Fetch-Site": "same-site",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ email: "csrf@ev.test", role: "admin" }),
+      });
+      assert.equal(res.status, 403);
+      assert.equal(db.prepare("SELECT 1 FROM users WHERE email = ?").get("csrf@ev.test"), undefined);
+    });
+
+    it("same-origin 쿠키 인증 쓰기 요청은 허용한다", async () => {
+      const res = await client.post("/api/users", {
+        cookie: adminCookie,
+        headers: { Origin: baseUrl, "Sec-Fetch-Site": "same-origin" },
+        body: { email: "same-origin@ev.test", role: "official" },
+      });
+      assert.equal(res.status, 201);
+      db.prepare("DELETE FROM users WHERE email = ?").run("same-origin@ev.test");
     });
   });
 
@@ -360,6 +386,26 @@ describe("auth service", () => {
       const { logs } = await res.json();
       assert.ok(logs.length > 0);
       assert.ok(logs.every((l) => l.action.startsWith("user.create")));
+    });
+
+    it("500번째 이후 로그 페이지도 반환한다", async () => {
+      const insert = db.prepare("INSERT INTO logs (level, action) VALUES ('info', ?)");
+      db.transaction(() => {
+        for (let i = 0; i < 600; i++) insert.run(`pagination.seed.${i}`);
+      })();
+
+      try {
+        const res = await client.get(
+          "/api/admin/logs?service=auth&action=pagination.seed&limit=100&offset=500",
+          { cookie: adminCookie },
+        );
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assert.equal(body.total, 600);
+        assert.equal(body.logs.length, 100);
+      } finally {
+        db.prepare("DELETE FROM logs WHERE action LIKE 'pagination.seed%'").run();
+      }
     });
 
     it("서비스 목록을 반환한다", async () => {

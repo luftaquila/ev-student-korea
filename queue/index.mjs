@@ -2,7 +2,7 @@ import https from "https";
 import crypto from "crypto";
 import express from "express";
 import Database from "better-sqlite3";
-import { createDatabase } from "../shared/db-setup.mjs";
+import { addColumn, createDatabase } from "../shared/db-setup.mjs";
 import {
   createApp, setupProcessHandlers, createDbRun, ensureDataDir,
 } from "../shared/express-setup.mjs";
@@ -51,11 +51,17 @@ db.transaction(() => {
     phone TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','called','done','canceled')),
     notified INTEGER NOT NULL DEFAULT 0,
+    notify_claimed_at TEXT,
     registered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     called_at TEXT,
     finished_at TEXT
   )`);
+  // notified: 0=미발송/재시도 가능, 1=발송 성공, 2=발송 중(lease 보유).
+  // 기존 DB에는 컬럼만 추가하고 기존 0/1 값은 그대로 유지한다.
+  addColumn(db, "queue", "notify_claimed_at TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_queue_status ON queue(status, id)");
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_queue_finished_at
+    ON queue(finished_at) WHERE finished_at IS NOT NULL`);
   // 같은 엔트리의 활성(대기·호출) 등록은 하나만 허용한다
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_active
     ON queue(num) WHERE status IN ('waiting','called')`);
@@ -190,11 +196,27 @@ function smsEnabled() {
 }
 
 // 발송은 응답을 막지 않는다(fire-and-forget). 성공·실패 모두 로그에 남긴다.
-function dispatchSms(kind, num, phone, content) {
+function dispatchSms(kind, num, phone, content, { onSuccess, onFailure } = {}) {
   Promise.resolve()
     .then(() => sendSms(phone, content))
-    .then((response) => logger.log(null, "sms.send", { kind, num, response }, `#${num}`))
-    .catch((e) => logger.warn(null, "sms.send", { kind, num, error: e.message || String(e) }, `#${num}`));
+    .then((response) => {
+      if (onSuccess) onSuccess(response);
+      logger.log(null, "sms.send", { kind, num, response }, `#${num}`);
+    }, (e) => {
+      if (onFailure) onFailure(e);
+      logger.warn(null, "sms.send", { kind, num, error: e.message || String(e) }, `#${num}`);
+    });
+}
+
+function finishAdvanceNotification(id, num, sent) {
+  const result = dbRun(() => db.prepare(
+    `UPDATE queue
+     SET notified = ?, notify_claimed_at = NULL
+     WHERE id = ? AND notified = 2`,
+  ).run(sent ? 1 : 0, id));
+  if (!result.success) {
+    logger.warn(null, "sms.notify_flag", { error: result.error, num, sent }, `#${num}`);
+  }
 }
 
 // 대기열이 움직일 때마다 앞쪽 notify_rank명 중 아직 안내하지 않은 사람에게 문자를 보낸다.
@@ -205,18 +227,42 @@ function notifyUpcoming() {
   if (rank <= 0) return;
 
   const upcoming = db.prepare(
-    "SELECT id, num, phone, notified FROM queue WHERE status = 'waiting' ORDER BY id LIMIT ?",
+    `SELECT id, num, phone, notified
+     FROM queue WHERE status = 'waiting' ORDER BY id LIMIT ?`,
   ).all(rank);
 
   for (const [i, row] of upcoming.entries()) {
-    if (row.notified) continue;
-    const result = dbRun(() => db.prepare("UPDATE queue SET notified = 1 WHERE id = ?").run(row.id));
+    if (row.notified === 1) continue;
+    // 조건부 UPDATE로 여러 프로세스가 같은 대상을 동시에 집어도 한 프로세스만 발송한다.
+    // 프로세스가 발송 중 죽으면 1분 뒤 lease를 다시 획득해 재시도할 수 있다.
+    const result = dbRun(() => db.prepare(`
+      UPDATE queue
+      SET notified = 2,
+          notify_claimed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE id = ? AND status = 'waiting'
+        AND (
+          notified = 0
+          OR (
+            notified = 2
+            AND (
+              notify_claimed_at IS NULL
+              OR notify_claimed_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minute')
+            )
+          )
+        )
+    `).run(row.id));
     if (!result.success) {
       logger.warn(null, "sms.notify_flag", { error: result.error, num: row.num }, `#${row.num}`);
       continue;
     }
+    if (result.result.changes !== 1) continue;
+
     dispatchSms("advance", row.num, row.phone,
-      `${SMS_PREFIX} 엔트리 ${row.num}번 대기 ${i + 1}번째입니다. 등록 데스크 근처에서 대기하세요.`);
+      `${SMS_PREFIX} 엔트리 ${row.num}번 대기 ${i + 1}번째입니다. 등록 데스크 근처에서 대기하세요.`,
+      {
+        onSuccess: () => finishAdvanceNotification(row.id, row.num, true),
+        onFailure: () => finishAdvanceNotification(row.id, row.num, false),
+      });
   }
 }
 
@@ -303,13 +349,15 @@ app.get("/api/queue", (req, res) => {
     WHERE q.status = 'called' ORDER BY q.called_at
   `).all();
 
-  // 타임스탬프는 UTC로 저장되므로 KST(+9) 기준으로 "오늘"을 계산한다
+  // 타임스탬프 컬럼에 함수를 씌우면 전체 이력을 스캔한다. KST 오늘의 UTC 경계를
+  // 상수로 계산해 finished_at 부분 인덱스로 범위 검색한다.
   const today = db.prepare(`
     SELECT
       SUM(status = 'done') AS done,
       SUM(status = 'canceled') AS canceled
     FROM queue
-    WHERE finished_at IS NOT NULL AND date(finished_at, '+9 hours') = date('now', '+9 hours')
+    WHERE finished_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','+9 hours','start of day','-9 hours')
+      AND finished_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','+9 hours','start of day','-9 hours','+1 day')
   `).get();
 
   res.json({
@@ -384,12 +432,24 @@ function transition(req, res, id, from, to, timestampCol, action, onSuccess) {
     return res.status(409).send("이미 처리된 대기 내역입니다.");
   }
 
+  const placeholders = from.map(() => "?").join(",");
   const result = dbRun(() => db.prepare(
-    `UPDATE queue SET status = ?, ${timestampCol} = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
-  ).run(to, reg.id));
+    `UPDATE queue
+     SET status = ?, ${timestampCol} = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE id = ? AND status IN (${placeholders})`,
+  ).run(to, reg.id, ...from));
   if (!result.success) {
     logger.warn(req, action, { error: result.error, num: reg.num }, `#${reg.num}`);
     return res.status(result.status).send(result.error);
+  }
+  if (result.result.changes !== 1) {
+    const latest = db.prepare("SELECT status FROM queue WHERE id = ?").get(reg.id);
+    logger.warn(req, action, {
+      reason: "concurrent_transition",
+      status: latest?.status || reg.status,
+      num: reg.num,
+    }, `#${reg.num}`);
+    return res.status(409).send("다른 요청에서 먼저 처리된 대기 내역입니다.");
   }
 
   logger.log(req, action, { num: reg.num, school: reg.school, team: reg.team }, `#${reg.num}`);

@@ -25,7 +25,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install backend dependencies
+        run: |
+          (cd auth && npm ci)
+          (cd queue && npm ci)
+
+      - name: Run tests
+        run: node --test --test-force-exit tests/**/*.test.mjs
+
   build:
+    needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

@@ -16,13 +16,20 @@ describe("queue service", () => {
   let server, client, db, dbPath;
   let adminCookie, officialCookie;
   let sentSms; // options.sendSms로 가로챈 발송 기록
+  let smsAttempts;
+  let smsFailure;
 
   before(async () => {
     dbPath = tmpDbPath();
     sentSms = [];
     const created = createQueueApp({
       dbPath,
-      sendSms: async (to, content) => { sentSms.push({ to, content }); return "ok"; },
+      sendSms: async (to, content) => {
+        smsAttempts++;
+        if (smsFailure) throw smsFailure;
+        sentSms.push({ to, content });
+        return "ok";
+      },
     });
     db = created.db;
     const started = await startServer(created.app);
@@ -47,6 +54,8 @@ describe("queue service", () => {
     db.prepare("UPDATE settings SET value = 'true' WHERE key = 'sms'").run();
     db.prepare("UPDATE settings SET value = '3' WHERE key = 'notify_rank'").run();
     sentSms.length = 0;
+    smsAttempts = 0;
+    smsFailure = null;
   }
 
   function addEntry(num, team = `팀${num}`, school = "OO대학교") {
@@ -146,6 +155,25 @@ describe("queue service", () => {
       const body = await res.json();
       assert.equal(body.service, "queue");
       assert.ok(Array.isArray(body.logs));
+    });
+
+    it("내부 로그 API는 500건보다 큰 집계 윈도우를 반환한다", async () => {
+      const insert = db.prepare("INSERT INTO logs (level, action) VALUES ('info', ?)");
+      db.transaction(() => {
+        for (let i = 0; i < 600; i++) insert.run(`pagination.seed.${i}`);
+      })();
+
+      try {
+        const res = await client.get("/api/logs?action=pagination.seed&limit=600", {
+          headers: { "X-Internal-Service": TEST_INTERNAL_SECRET },
+        });
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assert.equal(body.total, 600);
+        assert.equal(body.logs.length, 600);
+      } finally {
+        db.prepare("DELETE FROM logs WHERE action LIKE 'pagination.seed%'").run();
+      }
     });
   });
 
@@ -262,6 +290,25 @@ describe("queue service", () => {
       assert.equal(body.position, 2);
       assert.equal(body.waiting_total, 2);
     });
+
+    it("오늘 처리 현황은 finished_at 인덱스로 집계한다", async () => {
+      addEntry(1);
+      const reg = await (await register(1)).json();
+      await client.post(`/api/queue/${reg.id}/done`, { cookie: officialCookie });
+
+      const body = await (await client.get("/api/queue", { cookie: officialCookie })).json();
+      assert.equal(body.today.done, 1);
+      assert.equal(body.today.canceled, 0);
+
+      const plan = db.prepare(`
+        EXPLAIN QUERY PLAN
+        SELECT SUM(status = 'done'), SUM(status = 'canceled')
+        FROM queue
+        WHERE finished_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','+9 hours','start of day','-9 hours')
+          AND finished_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','+9 hours','start of day','-9 hours','+1 day')
+      `).all();
+      assert.ok(plan.some((row) => row.detail.includes("idx_queue_finished_at")));
+    });
   });
 
   describe("사전 안내 SMS", () => {
@@ -306,6 +353,24 @@ describe("queue service", () => {
       await client.post(`/api/queue/${reg.id}/call`, { cookie: officialCookie });
       assert.equal(sentSms.length, 1);
       assert.ok(sentSms[0].content.includes("차례입니다"));
+    });
+
+    it("사전 안내 발송 실패를 발송 완료로 표시하지 않고 재시도한다", async () => {
+      await client.patch("/api/settings", { cookie: officialCookie, body: { notify_rank: 1 } });
+      addEntry(1);
+      smsFailure = new Error("temporary outage");
+
+      await register(1, "01000000001");
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(smsAttempts, 1);
+      assert.equal(db.prepare("SELECT notified FROM queue WHERE num = 1").get().notified, 0);
+
+      smsFailure = null;
+      await client.patch("/api/settings", { cookie: officialCookie, body: { notify_rank: 2 } });
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(smsAttempts, 2);
+      assert.equal(sentSms.length, 1);
+      assert.equal(db.prepare("SELECT notified FROM queue WHERE num = 1").get().notified, 1);
     });
   });
 
@@ -466,8 +531,20 @@ describe("queue service 마이그레이션", () => {
       affiliation TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     )`);
+    // notify_claimed_at 도입 직전의 대기열 스키마. 기존 notified=1 값은 보존되어야 한다.
+    legacy.exec(`CREATE TABLE queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      num INTEGER NOT NULL,
+      phone TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'waiting',
+      notified INTEGER NOT NULL DEFAULT 0,
+      registered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      called_at TEXT,
+      finished_at TEXT
+    )`);
     legacy.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     legacy.prepare("INSERT INTO entries (num, name, affiliation) VALUES (?, ?, ?)").run(3, "옛날팀", "옛날대학교");
+    legacy.prepare("INSERT INTO queue (num, phone, notified) VALUES (?, ?, 1)").run(3, "01012345678");
     legacy.prepare("INSERT INTO settings (key, value) VALUES ('event_name', 'EV Student Korea')").run();
     legacy.close();
 
@@ -478,6 +555,11 @@ describe("queue service 마이그레이션", () => {
         [{ num: 3, school: "옛날대학교", team: "옛날팀" }],
       );
       assert.equal(db.prepare("SELECT 1 FROM settings WHERE key = 'event_name'").get(), undefined);
+      assert.ok(db.prepare("PRAGMA table_info(queue)").all().some((c) => c.name === "notify_claimed_at"));
+      assert.deepEqual(
+        db.prepare("SELECT notified, notify_claimed_at FROM queue WHERE num = 3").get(),
+        { notified: 1, notify_claimed_at: null },
+      );
     } finally {
       db.close();
     }

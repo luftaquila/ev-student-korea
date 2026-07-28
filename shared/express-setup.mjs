@@ -118,15 +118,53 @@ export function createApp(deps, authRoleFn) {
     next();
   });
 
-  // 2. CSRF 심층방어: 모던 브라우저가 보내는 Sec-Fetch-Site 헤더가 cross-site인 쓰기
-  // 요청을 차단한다. 1차 방어는 ev_session 쿠키의 SameSite=Lax이고 이 검사는 두 번째
-  // 계층. 헤더가 없는 요청(내부 서비스 호출, 구형 클라이언트)과 same-origin/same-site/none은
-  // 통과한다.
+  // 2. CSRF 심층방어. SameSite는 origin이 아니라 site 기준이라, 다른 *.luftaquila.io
+  // 서비스에서 온 same-site 요청에도 세션 쿠키가 실린다. 쿠키 인증 쓰기 요청은 Origin과
+  // Sec-Fetch-Site가 실제 same-origin인지 확인한다. 두 헤더가 모두 없는 비브라우저
+  // 클라이언트는 기존 호환성을 위해 허용하며, 내부 서비스 요청은 뒤의 시크릿 검증을 거친다.
   const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+  const configuredOrigin = (() => {
+    if (!process.env.PUBLIC_URL) return null;
+    try { return new URL(process.env.PUBLIC_URL).origin; }
+    catch { return null; }
+  })();
+
+  function requestOrigin(req) {
+    if (configuredOrigin) return configuredOrigin;
+    const forwardedProto = req.headers["x-forwarded-proto"]?.split(",")[0]?.trim();
+    const proto = forwardedProto || req.protocol || "http";
+    const host = req.headers.host;
+    if (!host) return null;
+    try { return new URL(`${proto}://${host}`).origin; }
+    catch { return null; }
+  }
+
+  function isAllowedBrowserOrigin(origin, expectedOrigin) {
+    if (origin === expectedOrigin) return true;
+    // Vite 개발 서버는 브라우저 origin(localhost:5173)을 유지한 채 API 포트로 프록시한다.
+    // 로컬 compose도 production 이미지로 실행되므로 실행 모드와 무관하게 loopback만 예외로
+    // 허용한다. 원격 사이트에서 ev로 보내는 요청은 Sec-Fetch-Site가 cross-site라 아래
+    // 검사에서 계속 차단된다.
+    try {
+      return ["localhost", "127.0.0.1", "::1"].includes(new URL(origin).hostname);
+    } catch {
+      return false;
+    }
+  }
+
   app.use((req, res, next) => {
     if (CSRF_SAFE_METHODS.has(req.method)) return next();
-    if (req.headers["sec-fetch-site"] === "cross-site") {
-      return res.status(403).send("cross-site 요청은 허용되지 않습니다.");
+    if (!req.cookies[COOKIE_SESSION]) return next();
+
+    const origin = req.headers.origin;
+    const fetchSite = req.headers["sec-fetch-site"];
+    const expectedOrigin = requestOrigin(req);
+
+    if (origin && (!expectedOrigin || !isAllowedBrowserOrigin(origin, expectedOrigin))) {
+      return res.status(403).send("다른 출처의 요청은 허용되지 않습니다.");
+    }
+    if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+      return res.status(403).send("다른 출처의 요청은 허용되지 않습니다.");
     }
     next();
   });

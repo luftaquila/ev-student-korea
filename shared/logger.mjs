@@ -101,8 +101,15 @@ export function createLogger(db, serviceName, maxRows = 50000) {
       return res.status(403).send("권한이 없습니다.");
     }
 
-    const limit = Math.max(1, Math.min(Number(req.query.limit) || 100, 500));
-    const offset = Number(req.query.offset) || 0;
+    // 집계 API는 전역 offset을 적용하기 위해 서비스별로 offset+page-size만큼 가져온다.
+    // 서비스당 로그 보존 상한(maxRows, 기본 50,000)까지 허용해야 500번째 이후 페이지가
+    // 비지 않는다. 일반 UI 기본값은 그대로 100이다.
+    const requestedLimit = Number(req.query.limit);
+    const requestedOffset = Number(req.query.offset);
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.max(1, Math.min(requestedLimit, maxRows))
+      : 100;
+    const offset = Number.isInteger(requestedOffset) ? Math.max(0, requestedOffset) : 0;
 
     const { where, params } = buildLogFilter(req.query);
 

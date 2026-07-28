@@ -45,6 +45,7 @@ function toggleAgreed() {
 // 번호 입력이 멈추면(250ms) 엔트리를 조회한다
 watch(num, (value) => {
   clearTimeout(lookupTimer);
+  const seq = ++lookupSeq;
   entry.value = null;
   entryError.value = "";
   submitError.value = "";
@@ -53,7 +54,6 @@ watch(num, (value) => {
   if (!trimmed) { checking.value = false; return; }
 
   checking.value = true;
-  const seq = ++lookupSeq;
   lookupTimer = setTimeout(async () => {
     try {
       const found = await api.fetchEntry(trimmed);

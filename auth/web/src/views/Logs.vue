@@ -36,7 +36,7 @@ const hasFilters = computed(() =>
   Object.values(filters.value).some((v) => v));
 
 const rangeLabel = computed(() => {
-  if (!logs.value.length) return "0";
+  if (!logs.value.length) return `0 / ${total.value}`;
   return `${offset.value + 1}–${offset.value + logs.value.length} / ${total.value}`;
 });
 
@@ -230,10 +230,10 @@ function summarize(value) {
       <div>{{ hasFilters ? "조건에 맞는 로그가 없습니다." : "기록된 로그가 없습니다." }}</div>
     </div>
 
-    <div v-if="logs.length" class="pager">
+    <div v-if="logs.length || offset > 0" class="pager">
       <button class="btn btn-sm" type="button" :disabled="offset === 0 || loading" @click="page(-1)">이전</button>
       <span>{{ rangeLabel }}</span>
-      <button class="btn btn-sm" type="button" :disabled="logs.length < LIMIT || loading" @click="page(1)">다음</button>
+      <button class="btn btn-sm" type="button" :disabled="offset + logs.length >= total || loading" @click="page(1)">다음</button>
     </div>
   </section>
 

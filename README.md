@@ -62,7 +62,7 @@ node -e 'import("./shared/express-setup.mjs").then(m=>console.log(m.createJWT({e
 프로덕션은 **luftwolke의 k3s + Flux GitOps**다. compose는 로컬 확인용으로만 쓴다.
 
 ```
-코드 push → GitHub Actions가 ghcr.io/luftaquila/ev-student-korea/{auth,queue,caddy}:latest 빌드
+코드 push → GitHub Actions가 테스트 통과 후 ghcr.io/luftaquila/ev-student-korea/{auth,queue,caddy}:latest 빌드
          → Flux가 luftaquila/k3s 를 pull → luftwolke의 ev 네임스페이스에 반영
 ```
 

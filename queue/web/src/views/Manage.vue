@@ -192,7 +192,8 @@ onUnmounted(() => clearInterval(timer));
               <td class="cell-mono"><a :href="`tel:${row.phone}`">{{ displayPhone(row.phone) }}</a></td>
               <td class="cell-mono nowrap dim">{{ formatDate(row.registered_at) }}</td>
               <td>
-                <span v-if="row.notified" class="badge badge-ok">발송됨</span>
+                <span v-if="row.notified === 1" class="badge badge-ok">발송됨</span>
+                <span v-else-if="row.notified === 2" class="badge badge-muted">발송 중</span>
                 <span v-else class="dim">-</span>
               </td>
               <td>

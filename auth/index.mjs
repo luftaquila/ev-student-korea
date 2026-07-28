@@ -598,11 +598,15 @@ const LOG_SERVICES = (() => {
 // GET /api/admin/logs - 전체 서비스 로그 집계
 app.get("/api/admin/logs", async (req, res) => {
   const { service, limit: qLimit, offset: qOffset, ...filters } = req.query;
-  const limit = Math.min(Number(qLimit) || 100, 500);
-  const offset = Number(qOffset) || 0;
+  const parsedLimit = Number(qLimit);
+  const parsedOffset = Number(qOffset);
+  const limit = Number.isInteger(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 500)) : 100;
+  const offset = Number.isInteger(parsedOffset) ? Math.max(0, parsedOffset) : 0;
 
   const qs = new URLSearchParams();
-  const fetchLimit = Math.min(offset + limit + 100, 2000);
+  // 전역 시간순 병합 후 offset을 적용하므로 각 서비스에서 최소 offset+limit개가 필요하다.
+  // 서비스별 logger 보존 상한이 50,000행이라 그 이상 가져올 필요는 없다.
+  const fetchLimit = Math.min(offset + limit, 50000);
   qs.set("limit", String(fetchLimit));
   for (const [k, v] of Object.entries(filters)) {
     if (v) qs.set(k, v);

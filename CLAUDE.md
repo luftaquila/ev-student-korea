@@ -72,7 +72,7 @@ make restart                   # 재시작만
 프로덕션은 compose가 아니라 **luftwolke의 k3s + Flux**다. compose/Makefile은 로컬 확인용.
 
 ```
-main push → GitHub Actions(build.yml) → ghcr.io/luftaquila/ev-student-korea/{auth,queue,caddy}:latest
+main push → GitHub Actions(build.yml: test → build) → ghcr.io/luftaquila/ev-student-korea/{auth,queue,caddy}:latest
           → Flux가 luftaquila/k3s pull → ev 네임스페이스 반영 (~1분)
 ```
 
@@ -87,8 +87,9 @@ main push → GitHub Actions(build.yml) → ghcr.io/luftaquila/ev-student-korea/
   참조한다. FSK와 같은 값을 쓴다(SENS credential은 FSK email 서비스 설정과 동일).
 - 비시크릿은 `ev-config` ConfigMap(NODE_ENV · TEST_SERVER · ADMIN_EMAIL · GOOGLE_CLIENT_ID ·
   PUBLIC_URL · DOMAIN_NAME).
-- 데이터는 `/home/k3s-data/ev/{auth,queue}` hostPath. 전 앱 `runAsUser:0` +
-  `seLinuxOptions: spc_t` 규칙.
+- 데이터는 `/home/k3s-data/ev/{auth,queue}` hostPath. Pod는 볼륨 권한 정리를 위해
+  `runAsUser:0` + `seLinuxOptions: spc_t`로 시작하지만, 백엔드 entrypoint가 정리 직후
+  `su-exec node:node`로 내려 실제 Node 프로세스는 UID/GID 1000으로 실행한다.
 - 같은 `:latest`로 이미지를 새로 밀었으면 `kubectl -n ev rollout restart deploy/auth`
   (또는 `deploy/queue`).
 - 상태 확인: `flux get kustomizations` · `kubectl -n ev get pods`.
