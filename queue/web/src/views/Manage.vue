@@ -72,10 +72,7 @@ onUnmounted(() => clearInterval(timer));
 
 <template>
   <div class="page-head">
-    <div>
-      <h1 class="page-title">대기열 관리</h1>
-      <p class="page-desc">호출하면 해당 팀에게 문자가 발송됩니다. 등록을 마치면 완료 처리해 주세요.</p>
-    </div>
+    <h1 class="page-title">대기열 관리</h1>
     <div v-if="board" class="row-wrap stats">
       <span class="badge badge-accent">대기 {{ board.waiting.length }}</span>
       <span class="badge">호출 {{ board.called.length }}</span>
@@ -112,13 +109,10 @@ onUnmounted(() => clearInterval(timer));
             >
             <span class="switch-track"></span>
           </span>
-          <span v-if="!board.settings.sms_available" class="dim">
-            서버에 Naver Cloud credential이 없어 발송할 수 없습니다.
-          </span>
         </label>
 
         <div class="setting-item">
-          <label class="setting-label" for="notify-rank">사전 안내 순번</label>
+          <label class="setting-label" for="notify-rank">사전 안내 순번 (0 = 끔)</label>
           <div class="row-wrap">
             <input
               id="notify-rank" v-model.number="rankInput" class="input input-rank"
@@ -129,14 +123,6 @@ onUnmounted(() => clearInterval(timer));
               @click="saveSettings({ notify_rank: rankInput }, '사전 안내 순번을 저장했습니다.')"
             >저장</button>
           </div>
-          <span class="dim">대기 N번째가 되면 미리 문자를 보냅니다. 0이면 보내지 않습니다.</span>
-        </div>
-
-        <div class="setting-item">
-          <span class="setting-label">문자 형식</span>
-          <span class="dim sms-sample">
-            {{ board.settings.sms_prefix }} 엔트리 3번 차례입니다. 지금 등록 데스크로 와주세요.
-          </span>
         </div>
       </div>
     </section>
@@ -145,7 +131,6 @@ onUnmounted(() => clearInterval(timer));
     <section v-if="board.called.length" class="panel called-panel">
       <div class="panel-head">
         <span class="panel-title">호출됨</span>
-        <span class="dim">아직 데스크에 오지 않은 팀입니다</span>
       </div>
       <div class="table-wrap">
         <table class="data-table">
@@ -161,11 +146,15 @@ onUnmounted(() => clearInterval(timer));
               <td>{{ row.team || "팀 미등록" }}</td>
               <td class="cell-mono">{{ row.phone }}</td>
               <td class="cell-mono nowrap dim">{{ formatDate(row.called_at) }}</td>
-              <td class="text-right actions">
-                <button class="btn btn-sm btn-primary" type="button" :disabled="busy" @click="doneRow(row)">
-                  <AppIcon name="check" /><span>완료</span>
-                </button>
-                <button class="btn btn-sm" type="button" :disabled="busy" @click="cancelRow(row)">부재</button>
+              <!-- 버튼은 래퍼 안에서 flex로 정렬한다. td에 직접 display:flex를 걸면
+                   셀이 테이블 레이아웃에서 빠져나와 행 높이·보더가 어긋난다. -->
+              <td>
+                <div class="actions">
+                  <button class="btn btn-sm btn-primary" type="button" :disabled="busy" @click="doneRow(row)">
+                    <AppIcon name="check" /><span>완료</span>
+                  </button>
+                  <button class="btn btn-sm" type="button" :disabled="busy" @click="cancelRow(row)">부재</button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -201,14 +190,16 @@ onUnmounted(() => clearInterval(timer));
                 <span v-if="row.notified" class="badge badge-ok">발송됨</span>
                 <span v-else class="dim">-</span>
               </td>
-              <td class="text-right actions">
-                <button class="btn btn-sm btn-primary" type="button" :disabled="busy" @click="callRow(row)">
-                  <AppIcon name="notice" /><span>호출</span>
-                </button>
-                <button class="btn btn-sm" type="button" :disabled="busy" @click="doneRow(row)">완료</button>
-                <button class="btn btn-icon btn-sm" type="button" title="취소" :disabled="busy" @click="cancelRow(row)">
-                  <AppIcon name="close" />
-                </button>
+              <td>
+                <div class="actions">
+                  <button class="btn btn-sm btn-primary" type="button" :disabled="busy" @click="callRow(row)">
+                    <AppIcon name="notice" /><span>호출</span>
+                  </button>
+                  <button class="btn btn-sm" type="button" :disabled="busy" @click="doneRow(row)">완료</button>
+                  <button class="btn btn-icon btn-sm" type="button" title="취소" :disabled="busy" @click="cancelRow(row)">
+                    <AppIcon name="close" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -236,34 +227,25 @@ onUnmounted(() => clearInterval(timer));
 .settings-body {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md) var(--spacing-xl);
+  align-items: flex-start;
 }
 
 .setting-item {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  min-width: 10rem;
 }
 
 .setting-label {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-secondary);
-}
-
-.setting-item .dim {
-  max-width: 16rem;
-  font-size: 0.75rem;
-  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .input-rank {
-  width: 5rem;
-}
-
-.sms-sample {
-  max-width: 18rem;
+  width: 4.5rem;
 }
 
 .called-panel {
@@ -286,11 +268,11 @@ onUnmounted(() => clearInterval(timer));
   font-weight: 600;
 }
 
+/* 아이콘이 있는 버튼과 없는 버튼을 나란히 두면 baseline 정렬 탓에 높이가 어긋난다 */
 .actions {
-  white-space: nowrap;
-}
-
-.actions .btn + .btn {
-  margin-left: 0.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
 }
 </style>

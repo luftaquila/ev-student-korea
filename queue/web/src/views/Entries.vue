@@ -34,6 +34,10 @@ const counts = computed(() => ({
   queued: entries.value.filter((e) => e.queue_status).length,
 }));
 
+// 번호·학교·팀 모두 필수다
+const canAdd = computed(() =>
+  ["num", "school", "team"].every((k) => String(form.value[k]).trim()));
+
 async function load() {
   loading.value = true;
   try {
@@ -161,10 +165,7 @@ async function bulkRemove() {
 
 <template>
   <div class="page-head">
-    <div>
-      <h1 class="page-title">엔트리 관리</h1>
-      <p class="page-desc">여기 등록된 엔트리 번호만 대기 등록을 할 수 있습니다.</p>
-    </div>
+    <h1 class="page-title">엔트리 관리</h1>
     <div class="row-wrap stats">
       <span class="badge">전체 {{ counts.total }}</span>
       <span v-if="counts.queued" class="badge badge-accent">대기열에 {{ counts.queued }}</span>
@@ -179,20 +180,20 @@ async function bulkRemove() {
         <AppIcon name="plus" /><span>일괄 추가</span>
       </button>
     </div>
-    <form class="panel-body toolbar" @submit.prevent="addEntry">
-      <div class="field">
-        <label class="field-label" for="new-num">번호 (필수)</label>
-        <input id="new-num" v-model="form.num" class="input" type="text" inputmode="numeric" autocomplete="off">
+    <form class="panel-body add-form" @submit.prevent="addEntry">
+      <div class="field field-num">
+        <label class="field-label" for="new-num">번호</label>
+        <input id="new-num" v-model="form.num" class="input" type="text" inputmode="numeric" maxlength="4" autocomplete="off">
       </div>
-      <div class="field grow">
+      <div class="field">
         <label class="field-label" for="new-school">학교</label>
         <input id="new-school" v-model="form.school" class="input" type="text" autocomplete="off">
       </div>
-      <div class="field grow">
-        <label class="field-label" for="new-team">팀 (필수)</label>
+      <div class="field">
+        <label class="field-label" for="new-team">팀</label>
         <input id="new-team" v-model="form.team" class="input" type="text" autocomplete="off">
       </div>
-      <button class="btn btn-primary" type="submit" :disabled="busy || !form.num.trim() || !form.team.trim()">추가</button>
+      <button class="btn btn-primary" type="submit" :disabled="busy || !canAdd">추가</button>
     </form>
   </section>
 
@@ -305,7 +306,7 @@ async function bulkRemove() {
             placeholder="1, 한국대학교, 팀이름&#10;2, 서울대학교, 다른팀"
           ></textarea>
         </div>
-        <p class="dim">이미 등록된 번호는 건너뜁니다. 학교는 생략할 수 있습니다.</p>
+        <p class="dim">이미 등록된 번호는 건너뜁니다.</p>
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" type="button" @click="bulkOpen = false">취소</button>
@@ -324,12 +325,26 @@ async function bulkRemove() {
   margin-bottom: var(--spacing-md);
 }
 
-.add-panel .field {
-  flex: 1 1 6rem;
+/* 번호·학교·팀·버튼을 한 줄에 둔다. 번호는 네 자리까지라 좁게 고정한다.
+   좁은 화면에서는 입력이 쓸 수 없을 만큼 눌리므로 flex-basis 기준으로 접힌다. */
+.add-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-sm);
 }
 
-.add-panel .field.grow {
-  flex: 2 1 12rem;
+.add-form .field {
+  flex: 1 1 9rem;
+}
+
+.add-form .field-num {
+  flex: none;
+  width: 4.5rem;
+}
+
+.add-form .btn {
+  flex: none;
 }
 
 .search {

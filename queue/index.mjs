@@ -120,7 +120,7 @@ function rateLimit(req, res, next) {
   if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 60000; }
   entry.count++;
   rateLimitMap.set(ip, entry);
-  if (entry.count > 60) return res.status(429).send("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+  if (entry.count > 60) return res.status(429).send("요청이 너무 많습니다. 잠시 후 다시 시도하세요.");
   next();
 }
 
@@ -216,7 +216,7 @@ function notifyUpcoming() {
       continue;
     }
     dispatchSms("advance", row.num, row.phone,
-      `${SMS_PREFIX} 엔트리 ${row.num}번 대기 ${i + 1}번째입니다. 등록 데스크 근처에서 기다려 주세요.`);
+      `${SMS_PREFIX} 엔트리 ${row.num}번 대기 ${i + 1}번째입니다. 등록 데스크 근처에서 대기하세요.`);
   }
 }
 
@@ -259,7 +259,7 @@ app.get("/api/status", (req, res) => {
 app.post("/api/lookup", rateLimit, (req, res) => {
   const num = parseEntryNum(req.body.num);
   const phone = normalizePhone(req.body.phone);
-  if (!num || !phone) return res.status(400).send("엔트리 번호와 전화번호를 확인해 주세요.");
+  if (!num || !phone) return res.status(400).send("엔트리 번호와 전화번호를 확인하세요.");
 
   const reg = db.prepare(`
     SELECT q.id, q.num, q.status, q.registered_at, q.called_at, e.school, e.team
@@ -325,7 +325,7 @@ app.post("/api/queue", (req, res) => {
   const num = parseEntryNum(req.body.num);
   if (!num) return res.status(400).send("올바르지 않은 엔트리 번호입니다.");
   const phone = normalizePhone(req.body.phone);
-  if (!phone) return res.status(400).send("올바르지 않은 전화번호입니다. 휴대전화 번호를 입력해 주세요.");
+  if (!phone) return res.status(400).send("올바르지 않은 전화번호입니다.");
 
   if (getSetting("open") !== "true") {
     logger.warn(req, "queue.register", { reason: "closed", num }, `#${num}`);
@@ -344,7 +344,7 @@ app.post("/api/queue", (req, res) => {
   if (active) {
     logger.warn(req, "queue.register", { reason: "duplicate", num, school: entry.school, team: entry.team, existing_status: active.status }, `#${num}`);
     return res.status(409).send(active.status === "called"
-      ? "이미 호출된 엔트리입니다. 등록 데스크로 와주세요."
+      ? "이미 호출된 엔트리입니다. 등록 데스크로 오세요."
       : "이미 대기 중인 엔트리입니다.");
   }
 
@@ -403,7 +403,7 @@ app.post("/api/queue/:id/call", (req, res) => {
   transition(req, res, req.params.id, ["waiting"], "called", "called_at", "queue.call", (reg) => {
     if (smsEnabled()) {
       dispatchSms("call", reg.num, reg.phone,
-        `${SMS_PREFIX} 엔트리 ${reg.num}번 차례입니다. 지금 등록 데스크로 와주세요.`);
+        `${SMS_PREFIX} 엔트리 ${reg.num}번 차례입니다. 등록 데스크로 오세요.`);
     }
   });
 });
@@ -501,9 +501,10 @@ app.get("/api/entries/:num", (req, res) => {
 app.post("/api/entries", (req, res) => {
   const num = parseEntryNum(req.body.num);
   if (!num) return res.status(400).send("엔트리 번호는 1~9999 사이의 숫자여야 합니다.");
+  const school = String(req.body.school || "").trim();
+  if (!school) return res.status(400).send("학교를 입력하세요.");
   const team = String(req.body.team || "").trim();
   if (!team) return res.status(400).send("팀을 입력하세요.");
-  const school = String(req.body.school || "").trim();
 
   const result = dbRun(() => db.prepare(
     "INSERT INTO entries (num, school, team) VALUES (?, ?, ?)",
@@ -535,10 +536,12 @@ app.post("/api/entries/bulk", (req, res) => {
     for (const row of rows) {
       const num = parseEntryNum(row.num);
       if (!num) { errors.push({ row, reason: "올바르지 않은 엔트리 번호" }); continue; }
+      const school = String(row.school || "").trim();
+      if (!school) { errors.push({ row, reason: "학교 없음" }); continue; }
       const team = String(row.team || "").trim();
       if (!team) { errors.push({ row, reason: "팀 없음" }); continue; }
 
-      const result = insert.run(num, String(row.school || "").trim(), team);
+      const result = insert.run(num, school, team);
       if (result.changes > 0) added.push(num);
       else skipped.push(num);
     }
@@ -599,7 +602,11 @@ app.patch("/api/entries/:num", (req, res) => {
     if (!trimmed) return res.status(400).send("팀은 비울 수 없습니다.");
     changes.team = trimmed;
   }
-  if (school !== undefined) changes.school = String(school).trim();
+  if (school !== undefined) {
+    const trimmed = String(school).trim();
+    if (!trimmed) return res.status(400).send("학교는 비울 수 없습니다.");
+    changes.school = trimmed;
+  }
   if (Object.keys(changes).length === 0) return res.status(400).send("변경할 내용이 없습니다.");
 
   const result = dbRun(() => db.transaction(() => {

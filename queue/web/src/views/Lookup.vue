@@ -26,7 +26,7 @@ async function doLookup({ silent = false } = {}) {
   const num = String(form.value.num).trim();
   const phone = String(form.value.phone).trim();
   if (!num || !phone) {
-    if (!silent) errorMsg.value = "엔트리 번호와 전화번호를 입력해 주세요.";
+    if (!silent) errorMsg.value = "엔트리 번호와 전화번호를 입력하세요.";
     return;
   }
 
@@ -107,7 +107,7 @@ onUnmounted(() => clearInterval(timer));
           <span class="rank-unit">번째</span>
         </div>
         <p class="note">
-          {{ aheadCount > 0 ? `앞에 ${aheadCount}팀이 기다리고 있습니다.` : "다음 차례입니다. 등록 데스크 근처에서 기다려 주세요." }}
+          {{ aheadCount > 0 ? `앞에 ${aheadCount}팀이 기다리고 있습니다.` : "다음 차례입니다. 등록 데스크 근처에서 대기하세요." }}
         </p>
       </template>
 
@@ -116,7 +116,7 @@ onUnmounted(() => clearInterval(timer));
           <AppIcon name="notice" />
           <span>호출되었습니다</span>
         </div>
-        <p class="note">지금 등록 데스크로 와주세요.</p>
+        <p class="note">등록 데스크로 오세요.</p>
       </template>
 
       <dl class="meta">
@@ -131,7 +131,6 @@ onUnmounted(() => clearInterval(timer));
       </dl>
 
       <div class="card-foot">
-        <span class="dim">15초마다 자동으로 갱신됩니다</span>
         <button class="btn btn-ghost btn-sm" type="button" @click="resetLookup">다른 번호로 조회</button>
       </div>
     </section>
@@ -139,7 +138,6 @@ onUnmounted(() => clearInterval(timer));
     <!-- 조회 폼 -->
     <section v-else class="panel card">
       <h1 class="card-title">내 순서 조회</h1>
-      <p class="card-desc">대기 등록에 사용한 엔트리 번호와 전화번호를 입력해 주세요.</p>
 
       <form class="form" @submit.prevent="doLookup()">
         <div class="field">
@@ -162,9 +160,7 @@ onUnmounted(() => clearInterval(timer));
       </form>
 
       <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-      <p v-else-if="notFound" class="muted found-none">
-        대기 중인 내역이 없습니다. 등록이 완료되었거나 취소된 경우입니다.
-      </p>
+      <p v-else-if="notFound" class="muted found-none">대기 중인 내역이 없습니다.</p>
     </section>
   </div>
 </template>
@@ -203,12 +199,6 @@ onUnmounted(() => clearInterval(timer));
 
 .card-title {
   font-size: 1.125rem;
-}
-
-.card-desc {
-  margin-top: 0.25rem;
-  font-size: 0.875rem;
-  color: var(--text-secondary);
 }
 
 /* ── 조회 폼 ─────────────────────────────────── */
@@ -285,10 +275,12 @@ onUnmounted(() => clearInterval(timer));
   height: 26px;
 }
 
+/* 한글은 기본 규칙대로 두면 "대기하 / 세요"처럼 어절 중간에서 끊긴다 */
 .note {
   margin-top: 0.35rem;
   font-size: 0.9375rem;
   color: var(--text-secondary);
+  word-break: keep-all;
 }
 
 .meta {
@@ -313,15 +305,8 @@ onUnmounted(() => clearInterval(timer));
 
 .card-foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
+  justify-content: flex-end;
   margin-top: var(--spacing-md);
-}
-
-.card-foot .dim {
-  font-size: 0.75rem;
 }
 
 @media (max-width: 420px) {

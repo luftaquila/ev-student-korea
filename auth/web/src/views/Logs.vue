@@ -123,10 +123,7 @@ function summarize(value) {
 
 <template>
   <div class="page-head">
-    <div>
-      <h1 class="page-title">시스템 로그</h1>
-      <p class="page-desc">전체 서비스의 감사 로그를 모아 보여줍니다. 서비스별 최근 5만 건까지 보관됩니다.</p>
-    </div>
+    <h1 class="page-title">시스템 로그</h1>
     <div class="row-wrap">
       <label class="row auto-toggle">
         <span class="switch">

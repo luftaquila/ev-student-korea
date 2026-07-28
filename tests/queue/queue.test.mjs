@@ -351,7 +351,9 @@ describe("queue service", () => {
       assert.equal(created.status, 201);
       assert.deepEqual(await created.json(), { num: 10, school: "XX대학교", team: "새팀" });
 
-      const dup = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, team: "중복" } });
+      const dup = await client.post("/api/entries", {
+        cookie: adminCookie, body: { num: 10, school: "XX대학교", team: "중복" },
+      });
       assert.equal(dup.status, 400);
 
       const patched = await client.patch("/api/entries/10", {
@@ -366,13 +368,31 @@ describe("queue service", () => {
       assert.equal(db.prepare("SELECT 1 FROM entries WHERE num = 10").get(), undefined);
     });
 
-    it("팀 없이 추가할 수 없다 (학교는 생략 가능)", async () => {
-      const noTeam = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, team: "  " } });
+    it("번호·학교·팀은 모두 필수다", async () => {
+      const noTeam = await client.post("/api/entries", {
+        cookie: adminCookie, body: { num: 10, school: "XX대학교", team: "  " },
+      });
       assert.equal(noTeam.status, 400);
 
-      const noSchool = await client.post("/api/entries", { cookie: adminCookie, body: { num: 10, team: "학교없는팀" } });
-      assert.equal(noSchool.status, 201);
-      assert.equal(db.prepare("SELECT school FROM entries WHERE num = 10").get().school, "");
+      const noSchool = await client.post("/api/entries", {
+        cookie: adminCookie, body: { num: 10, school: " ", team: "학교없는팀" },
+      });
+      assert.equal(noSchool.status, 400);
+
+      const noNum = await client.post("/api/entries", {
+        cookie: adminCookie, body: { school: "XX대학교", team: "번호없는팀" },
+      });
+      assert.equal(noNum.status, 400);
+
+      assert.equal(db.prepare("SELECT COUNT(*) c FROM entries").get().c, 0);
+    });
+
+    it("학교·팀을 빈 값으로 수정할 수 없다", async () => {
+      addEntry(10);
+      const school = await client.patch("/api/entries/10", { cookie: adminCookie, body: { school: "  " } });
+      assert.equal(school.status, 400);
+      const team = await client.patch("/api/entries/10", { cookie: adminCookie, body: { team: "" } });
+      assert.equal(team.status, 400);
     });
 
     it("대기 중인 엔트리는 삭제가 거부된다", async () => {
@@ -389,15 +409,16 @@ describe("queue service", () => {
         body: { entries: [
           { num: 1, school: "덮어쓰기시도", team: "중복팀" },
           { num: 2, school: "YY대학교", team: "새팀" },
-          { num: "bad", team: "형식오류" },
-          { num: 3, team: "" },
+          { num: "bad", school: "ZZ대학교", team: "형식오류" },
+          { num: 3, school: "ZZ대학교", team: "" },
+          { num: 4, team: "학교없음" },
         ] },
       });
       assert.equal(res.status, 200);
       const body = await res.json();
       assert.equal(body.added, 1);
       assert.equal(body.skipped, 1);
-      assert.equal(body.errors.length, 2);
+      assert.equal(body.errors.length, 3);
       assert.equal(db.prepare("SELECT team FROM entries WHERE num = 1").get().team, "기존팀");
       assert.deepEqual(
         db.prepare("SELECT school, team FROM entries WHERE num = 2").get(),

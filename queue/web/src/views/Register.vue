@@ -8,6 +8,7 @@ import * as api from "../api.js";
 
 const num = ref("");
 const phone = ref("");
+const agreed = ref(false);      // 개인정보 수집·이용 동의 (없으면 등록 불가)
 const entry = ref(null);        // 확인된 엔트리 { num, school, team, queue_status }
 const entryError = ref("");     // 번호 조회 실패 메시지
 const checking = ref(false);
@@ -24,7 +25,8 @@ let lookupTimer = null;
 let lookupSeq = 0;              // 늦게 도착한 응답이 최신 입력을 덮어쓰지 않게 한다
 
 const canSubmit = computed(() =>
-  !!entry.value && !entry.value.queue_status && phone.value.trim().length >= 10 && !busy.value);
+  !!entry.value && !entry.value.queue_status && phone.value.trim().length >= 10
+  && agreed.value && !busy.value);
 
 async function loadStatus() {
   try {
@@ -65,6 +67,7 @@ function reset() {
   lookupSeq++;
   num.value = "";
   phone.value = "";
+  agreed.value = false;
   entry.value = null;
   entryError.value = "";
   submitError.value = "";
@@ -141,7 +144,6 @@ onUnmounted(() => {
     <!-- 등록 폼 -->
     <form v-else class="panel card" @submit.prevent="submit">
       <h1 class="card-title">등록 대기 신청</h1>
-      <p class="card-desc">엔트리 번호와 연락받을 휴대전화 번호를 입력해 주세요.</p>
 
       <!-- 번호와 그 확인 결과는 한 덩어리다 — 결과가 입력 바로 아래 붙어야 읽힌다 -->
       <div class="num-group">
@@ -149,25 +151,22 @@ onUnmounted(() => {
           <label class="field-label" for="reg-num">엔트리 번호</label>
           <input
             id="reg-num" v-model="num" class="input big-input" type="text"
-            inputmode="numeric" autocomplete="off" autofocus
+            inputmode="numeric" maxlength="4" autocomplete="off" autofocus
           >
         </div>
 
-        <div class="entry-slot">
-          <div v-if="entry" class="entry-found" :class="{ busy: !!entry.queue_status }">
-            <AppIcon :name="entry.queue_status ? 'alert' : 'check'" />
-            <span class="entry-text">
-              <span class="entry-school">{{ entry.school || "학교 미등록" }}</span>
-              <span class="entry-team">{{ entry.team }}</span>
-            </span>
-            <span v-if="entry.queue_status" class="badge badge-warn">
-              {{ entry.queue_status === "called" ? "이미 호출됨" : "이미 대기 중" }}
-            </span>
-          </div>
-          <div v-else-if="checking" class="entry-hint dim">확인 중…</div>
-          <div v-else-if="entryError" class="entry-hint error">{{ entryError }}</div>
-          <div v-else class="entry-hint dim">번호를 입력하면 학교와 팀이 표시됩니다.</div>
+        <div v-if="entry" class="entry-found" :class="{ busy: !!entry.queue_status }">
+          <AppIcon :name="entry.queue_status ? 'alert' : 'check'" />
+          <span class="entry-text">
+            <span class="entry-school">{{ entry.school }}</span>
+            <span class="entry-team">{{ entry.team }}</span>
+          </span>
+          <span v-if="entry.queue_status" class="badge badge-warn">
+            {{ entry.queue_status === "called" ? "이미 호출됨" : "이미 대기 중" }}
+          </span>
         </div>
+        <p v-else-if="checking" class="entry-hint dim">확인 중…</p>
+        <p v-else-if="entryError" class="entry-hint error">{{ entryError }}</p>
       </div>
 
       <div class="field">
@@ -177,6 +176,15 @@ onUnmounted(() => {
           placeholder="010-0000-0000" autocomplete="off"
         >
       </div>
+
+      <!-- 개인정보 수집·이용 동의 (전화번호를 받으므로 필수) -->
+      <label class="consent">
+        <input v-model="agreed" type="checkbox">
+        <span class="consent-text">
+          <strong>개인정보 수집 및 이용 동의</strong>
+          <span class="dim">전화번호는 대기 순서 안내 문자에만 사용합니다.</span>
+        </span>
+      </label>
 
       <p v-if="submitError" class="error">{{ submitError }}</p>
 
@@ -215,6 +223,7 @@ onUnmounted(() => {
 .card-desc {
   color: var(--text-secondary);
   line-height: 1.6;
+  word-break: keep-all;
 }
 
 /* 폼 요소는 왼쪽 정렬이 자연스럽다(레이블-입력 축이 맞아야 읽힌다) */
@@ -237,13 +246,6 @@ onUnmounted(() => {
 .big-btn {
   padding: 0.75rem 1.5rem;
   font-size: 1rem;
-}
-
-/* 확인 영역은 높이를 고정해 결과가 나타날 때 폼이 튀지 않게 한다 */
-.entry-slot {
-  display: flex;
-  align-items: center;
-  min-height: 3.25rem;
 }
 
 .entry-found {
@@ -289,14 +291,40 @@ onUnmounted(() => {
 }
 
 .entry-hint {
-  width: 100%;
   text-align: left;
+  font-size: 0.8125rem;
+}
+
+/* 동의 문구는 체크박스 첫 줄에 시각적으로 맞춘다 */
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.consent input {
+  margin-top: 0.2rem;
+}
+
+.consent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.consent-text .dim {
   font-size: 0.8125rem;
 }
 
 .error {
   color: var(--accent-danger);
   font-size: 0.875rem;
+  word-break: keep-all;
 }
 
 .card-icon {

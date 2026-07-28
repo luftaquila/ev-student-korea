@@ -196,12 +196,7 @@ async function bulkRemove() {
 
 <template>
   <div class="page-head">
-    <div>
-      <h1 class="page-title">계정 관리</h1>
-      <p class="page-desc">
-        등록된 계정만 Google 로그인이 가능합니다. 권한은 등록 대기열 운영에 사용됩니다.
-      </p>
-    </div>
+    <h1 class="page-title">계정 관리</h1>
     <div class="row-wrap stats">
       <span class="badge">전체 {{ counts.total }}</span>
       <span class="badge badge-accent">관리자 {{ counts.admin }}</span>
@@ -219,7 +214,7 @@ async function bulkRemove() {
     </div>
     <form class="panel-body toolbar" @submit.prevent="addUser">
       <div class="field grow">
-        <label class="field-label" for="new-email">이메일 (필수)</label>
+        <label class="field-label" for="new-email">이메일</label>
         <input id="new-email" v-model="form.email" class="input" type="email" placeholder="name@example.com" autocomplete="off">
       </div>
       <div class="field">
@@ -230,15 +225,15 @@ async function bulkRemove() {
       </div>
       <div class="field">
         <label class="field-label" for="new-realname">실명</label>
-        <input id="new-realname" v-model="form.realname" class="input" type="text" placeholder="선택">
+        <input id="new-realname" v-model="form.realname" class="input" type="text">
       </div>
       <div class="field">
         <label class="field-label" for="new-affiliation">소속</label>
-        <input id="new-affiliation" v-model="form.affiliation" class="input" type="text" placeholder="선택">
+        <input id="new-affiliation" v-model="form.affiliation" class="input" type="text">
       </div>
       <div class="field">
         <label class="field-label" for="new-phone">연락처</label>
-        <input id="new-phone" v-model="form.phone" class="input" type="tel" placeholder="선택">
+        <input id="new-phone" v-model="form.phone" class="input" type="tel">
       </div>
       <button class="btn btn-primary" type="submit" :disabled="busy">추가</button>
     </form>
@@ -397,7 +392,7 @@ async function bulkRemove() {
             placeholder="hong@example.com, 홍길동, OO대학교, 010-0000-0000&#10;kim@example.com, 김철수"
           ></textarea>
         </div>
-        <p class="dim">이미 등록된 이메일은 건너뜁니다. 실명·소속·연락처는 생략할 수 있습니다.</p>
+        <p class="dim">이미 등록된 이메일은 건너뜁니다.</p>
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" type="button" @click="bulkOpen = false">취소</button>
