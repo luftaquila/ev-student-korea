@@ -213,8 +213,10 @@ onUnmounted(() => clearInterval(timer));
   margin-top: var(--spacing-md);
 }
 
+/* 버튼이 필드 간격(8px)만큼만 떨어져 있으면 입력칸에 붙어 보인다 — 한 단계 더 띄운다 */
 .submit {
   grid-column: 1 / -1;
+  margin-top: var(--spacing-sm);
   padding: 0.6rem 1rem;
 }
 

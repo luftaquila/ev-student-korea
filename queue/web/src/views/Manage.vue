@@ -92,29 +92,33 @@ onUnmounted(() => clearInterval(timer));
       <div class="panel-body settings-body">
         <label class="setting-item">
           <span class="setting-label">대기 접수</span>
-          <span class="switch">
-            <input
-              type="checkbox" :checked="board.settings.open" :disabled="busy"
-              @change="saveSettings({ open: $event.target.checked }, $event.target.checked ? '대기 접수를 열었습니다.' : '대기 접수를 마감했습니다.')"
-            >
-            <span class="switch-track"></span>
+          <span class="setting-control">
+            <span class="switch">
+              <input
+                type="checkbox" :checked="board.settings.open" :disabled="busy"
+                @change="saveSettings({ open: $event.target.checked }, $event.target.checked ? '대기 접수를 열었습니다.' : '대기 접수를 마감했습니다.')"
+              >
+              <span class="switch-track"></span>
+            </span>
           </span>
         </label>
 
         <label class="setting-item">
           <span class="setting-label">SMS 알림</span>
-          <span class="switch">
-            <input
-              type="checkbox" :checked="board.settings.sms" :disabled="busy || !board.settings.sms_available"
-              @change="saveSettings({ sms: $event.target.checked }, $event.target.checked ? 'SMS 알림을 켰습니다.' : 'SMS 알림을 껐습니다.')"
-            >
-            <span class="switch-track"></span>
+          <span class="setting-control">
+            <span class="switch">
+              <input
+                type="checkbox" :checked="board.settings.sms" :disabled="busy || !board.settings.sms_available"
+                @change="saveSettings({ sms: $event.target.checked }, $event.target.checked ? 'SMS 알림을 켰습니다.' : 'SMS 알림을 껐습니다.')"
+              >
+              <span class="switch-track"></span>
+            </span>
           </span>
         </label>
 
         <div class="setting-item">
           <label class="setting-label" for="notify-rank">사전 안내 순번 (0 = 끔)</label>
-          <div class="row-wrap">
+          <div class="setting-control row-wrap">
             <input
               id="notify-rank" v-model.number="rankInput" class="input input-rank"
               type="number" min="0" max="20"
@@ -245,6 +249,14 @@ onUnmounted(() => clearInterval(timer));
   white-space: nowrap;
 }
 
+/* 스위치는 20px, 숫자 입력은 34px다. 컨트롤을 같은 높이 띠에 넣고 세로 중앙에 두어
+   항목끼리 중심선이 맞게 한다(그러지 않으면 스위치가 7px 위로 떠 보인다). */
+.setting-control {
+  display: flex;
+  align-items: center;
+  min-height: 2.125rem;
+}
+
 .input-rank {
   width: 4.5rem;
 }
@@ -275,5 +287,10 @@ onUnmounted(() => clearInterval(timer));
   align-items: center;
   justify-content: flex-end;
   gap: 0.35rem;
+}
+
+/* .btn-icon의 패딩이 .btn-sm을 덮어써 같은 행에서 3px 더 커진다 — 행 안에서는 맞춘다 */
+.actions .btn-icon {
+  padding: 0.35rem;
 }
 </style>
