@@ -20,7 +20,6 @@ const menu = computed(() => {
   if (!isOfficial.value) return [];
   const items = [
     { name: "대기 현황", route: "/" },
-    { name: "대기 등록", route: "/register" },
     { name: "대기열 관리", route: "/manage" },
   ];
   if (isAdmin.value) items.push({ name: "엔트리 관리", route: "/entries" });

@@ -74,11 +74,17 @@ onUnmounted(() => clearInterval(timer));
 <template>
   <div class="page-head">
     <h1 class="page-title">대기열 관리</h1>
-    <div v-if="board" class="row-wrap stats">
-      <span class="badge badge-accent">대기 {{ board.waiting.length }}</span>
-      <span class="badge">호출 {{ board.called.length }}</span>
-      <span class="badge badge-ok">오늘 완료 {{ board.today.done }}</span>
-      <span v-if="board.today.canceled" class="badge badge-muted">취소 {{ board.today.canceled }}</span>
+    <div class="page-head-actions">
+      <div v-if="board" class="row-wrap stats">
+        <span class="badge badge-accent">대기 {{ board.waiting.length }}</span>
+        <span class="badge">호출 {{ board.called.length }}</span>
+        <span class="badge badge-ok">오늘 완료 {{ board.today.done }}</span>
+        <span v-if="board.today.canceled" class="badge badge-muted">취소 {{ board.today.canceled }}</span>
+      </div>
+      <RouterLink class="btn btn-primary register-link" to="/register">
+        <AppIcon name="plus" />
+        <span>대기 등록</span>
+      </RouterLink>
     </div>
   </div>
 
@@ -222,8 +228,20 @@ onUnmounted(() => clearInterval(timer));
 </template>
 
 <style scoped>
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
 .stats {
   gap: 0.35rem;
+}
+
+.register-link {
+  flex: none;
 }
 
 .settings-panel {
