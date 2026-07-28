@@ -217,8 +217,13 @@ onUnmounted(() => {
       >
         <span class="consent-box"><AppIcon v-if="agreed" name="check" /></span>
         <span class="consent-text">
-          <strong>개인정보 수집 및 이용에 동의합니다</strong>
-          <small>전화번호는 대기 순서 안내 문자에만 사용합니다.</small>
+          <strong>개인정보 수집·이용 동의 (필수)</strong>
+          <small>
+            수집 항목: 엔트리 번호, 휴대전화번호<br>
+            이용 목적: 대기 등록 및 순번 조회, 대기 순서·호출 안내<br>
+            보유·이용 기간: 대기 등록 시부터 등록 완료 또는 취소 시<br>
+            거부 시 대기 등록 및 순번 알림 서비스는 이용 불가
+          </small>
         </span>
       </button>
 
